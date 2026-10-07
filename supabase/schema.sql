@@ -424,3 +424,7 @@ create table public.poll_votes (option_id uuid not null references public.poll_o
 --   and not into a DM with someone who blocked you (or you blocked). Anyone in a group can add their own friends.
 -- Trigger notify_on_message: one notification per chat per person, updated with a running count while unsent;
 --   respects muted chats, the 'chat' setting, muted friends and blocks.
+
+-- Chat photo cleanup (daily, cron 'klander-cleanup' 03:17 UTC -> Edge Function cleanup):
+-- messages.image_removed_at; chat_photos_to_remove(lim) + mark_photos_removed(ids) are service_role only.
+-- Removes photos from deleted messages, photos older than 6 months, and uploads never sent (older than a day).

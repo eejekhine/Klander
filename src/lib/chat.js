@@ -61,7 +61,7 @@ export function useMessages(cid, uid) {
   const [, bump] = useState(0)
 
   const signImages = useCallback(async msgs => {
-    const need = msgs.filter(m => m.image_path && !urls.current[m.image_path]).map(m => m.image_path)
+    const need = msgs.filter(m => m.image_path && !m.image_removed_at && !urls.current[m.image_path]).map(m => m.image_path)
     if (!need.length) return
     const { data } = await supabase.storage.from('chat').createSignedUrls(need, 3600)
     for (const d of data || []) if (d.signedUrl) urls.current[d.path] = d.signedUrl

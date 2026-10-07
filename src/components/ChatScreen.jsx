@@ -208,6 +208,7 @@ function Conversation({ conv, chats, uid, me, people, friends, upcoming, onBack,
                     {reply && <span className="reply-quote">{first(who(reply.sender_id))}: {reply.deleted_at ? 'deleted' : reply.kind === 'image' ? 'Photo' : reply.kind === 'event' ? reply.event_ref?.title : reply.body}</span>}
                     {hiddenSender ? <i className="muted">Message from someone you blocked</i>
                       : x.deleted_at ? <i>Message deleted</i>
+                      : x.kind === 'image' && x.image_removed_at ? <i className="muted">Photo expired (kept for 6 months)</i>
                       : x.kind === 'image' ? <>{m.urls[x.image_path] ? <img src={m.urls[x.image_path]} alt="Photo" onClick={e => { e.stopPropagation(); setPanel({ photo: m.urls[x.image_path] }) }} /> : <span className="img-ph" />}{x.body && <span className="caption">{x.body}</span>}</>
                       : x.kind === 'event' ? <EventCard ev={x.event_ref} onOpen={e => { e.stopPropagation(); onOpenEvent(x.event_ref) }} />
                       : <span className="text">{linkify(x.body)}</span>}
@@ -329,7 +330,7 @@ function ChatInfo({ conv, chats, uid, me, people, friends, other, onBack, onClos
         ? <div className="row"><button className="btn danger grow" onClick={() => run(async () => { await chats.block(other); onToast(`Blocked ${first(people[other])}`); onClose() })}>Block</button><button className="btn grow" onClick={() => setConfirm(null)}>Cancel</button></div>
         : <button className="btn ghost block danger-text" onClick={() => setConfirm('block')}>Block {first(people[other])}</button>)}
       {other && <button className="btn ghost block danger-text" onClick={() => run(async () => { await chats.report({ userId: other, reason: 'Reported from chat info' }); onToast('Reported. Thanks for letting us know.') })}>Report {first(people[other])}</button>}
-      <p className="small muted" style={{ margin: 0 }}>Messages are private to the people in this chat. Blocking stops someone messaging you directly and hides their messages.</p>
+      <p className="small muted" style={{ margin: 0 }}>Messages are private to the people in this chat. Photos are kept for 6 months, then removed to save space. Blocking stops someone messaging you directly and hides their messages.</p>
       {error && <p className="error" role="alert">{error}</p>}
     </div>
   )
