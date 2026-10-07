@@ -27,10 +27,13 @@ import PlansSheet, { BroadcastCard } from './components/PlansSheet'
 import InviteSheet from './components/InviteSheet'
 import { usePlans } from './lib/plans'
 import { useNotifications } from './lib/notify'
+import { useSocial } from './lib/social'
+import PollSheet from './components/PollSheet'
+import { differenceInCalendarDays } from 'date-fns'
 import NotificationsSheet, { BellIcon } from './components/NotificationsSheet'
 import { buildBusyMap, freeNow } from './lib/freetime'
 
-const VIEWS = [['day', 'Day'], ['week', 'Week'], ['month', 'Month'], ['agenda', 'List']]
+const VIEWS = [['day', 'Day'], ['week', 'Week'], ['month', 'Month'], ['agenda', 'List'], ['people', 'People']]
 const readView = () => { try { return localStorage.getItem('klander:view') || 'week' } catch { return 'week' } }
 
 export default function CalendarApp({ data, user }) {
@@ -45,6 +48,8 @@ export default function CalendarApp({ data, user }) {
   const bd = useBirthdays(user.id)
   const pl = usePlans(user.id)
   const nt = useNotifications(user.id)
+  const so = useSocial(user.id)
+  const [pollView, setPollView] = useState(null)
   const [planInit, setPlanInit] = useState({})
   const [inviteView, setInviteView] = useState(null)
   const openPlans = (init = {}) => { setPlanInit(init); setCard(null); setBdayView(null); setSheet('plans') }
@@ -83,7 +88,7 @@ export default function CalendarApp({ data, user }) {
   }, [])
 
   const catMap = useMemo(() => Object.fromEntries(data.categories.map(c => [c.id, c])), [data.categories])
-  const range = useMemo(() => rangeFor(view, date), [view, date])
+  const range = useMemo(() => rangeFor(view === 'people' ? 'day' : view, date), [view, date])
 
   const mine = useMemo(() => expandEvents(data.events, range.from, range.to), [data.events, range])
   // Plans you've said Going/Maybe to show on your calendar like your own events
@@ -117,7 +122,39 @@ export default function CalendarApp({ data, user }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [data.events, goingPlans, pl.busy, user.id, dayKey])
   const freeInfo = id => (busyMap[id] ? freeNow(busyMap[id], now) : { free: true, until: null })
+  // Last (or next) plan together with each friend, for catch-up nudges
+  const plansWith = useMemo(() => {
+    const out = {}
+    const bump = (id, t) => { if (!out[id] || t > out[id]) out[id] = t }
+    const evById = Object.fromEntries(data.events.map(e => [e.id, e]))
+    for (const g of pl.guests) if (g.status !== 'declined' && evById[g.event_id]) bump(g.user_id, new Date(evById[g.event_id].starts_at).getTime())
+    for (const i of pl.invites) if (i.my_status !== 'declined') {
+      const t = new Date(i.starts_at).getTime()
+      bump(i.owner_id, t)
+      for (const g of i.guests || []) if (g.status === 'going') bump(g.user_id, t)
+    }
+    return out
+  }, [pl.guests, pl.invites, data.events])
+  const countdowns = useMemo(() => {
+    const list = data.events.filter(e => e.countdown && new Date(e.starts_at) > now).map(e => ({ e, days: differenceInCalendarDays(new Date(e.starts_at), now) }))
+    return list.sort((a, b) => a.days - b.days).slice(0, 2)
+  }, [data.events, now])
+  const peopleCols = useMemo(() => {
+    if (view !== 'people') return null
+    const colOf = o => (o.birthday ? o.birthday.id : o.plan ? user.id : o.friend ? o.owner_id : user.id)
+    const who = [...(meHidden ? [] : [{ id: user.id, person: data.profile, label: 'You' }]),
+      ...f.friends.filter(x => !f.hidden.includes(x.person.id)).map(x => ({ id: x.person.id, person: x.person, label: (x.person.display_name || x.person.username).split(/\s+/)[0] }))].slice(0, 6)
+    return who.map(w => ({ key: w.id, day: range.from, person: w.person, label: w.label, occurrences: occurrences.filter(o => colOf(o) === w.id) }))
+  }, [view, occurrences, f.friends, f.hidden, meHidden, range, user.id, data.profile])
+  const decidePoll = async (poll, option) => {
+    const row = await data.saveEvent({ title: poll.title, all_day: false, starts_at: option.starts_at, ends_at: option.ends_at, location: poll.location || '', notes: poll.note || '', rrule: null, exdates: [], category_id: null, visibility: 'friends', hidden_from: [] })
+    await pl.setInvitees(row.id, poll.invitees)
+    await so.markDecided(poll.id, option.id, row.id)
+    setPollView(null); setSheet(null); setDate(new Date(option.starts_at))
+    setToast(`Plan made for ${fmt(new Date(option.starts_at), 'EEE d MMM, HH:mm')}. Invites sent.`)
+  }
   const pendingInvites = pl.invites.filter(i => i.my_status === 'invited' && (i.rrule || new Date(i.ends_at) > now)).length
+    + so.polls.filter(q => q.owner_id !== user.id && !q.decided_option && !q.options.some(o => o.votes.some(v => v.user_id === user.id))).length
   const liveBroadcasts = pl.broadcasts.filter(b => b.user_id !== user.id && f.people[b.user_id] && new Date(b.ends_at) > now && new Date(b.starts_at) - now < 12 * 3600e3)
   const [hiddenBc, setHiddenBc] = useState(() => { try { return JSON.parse(localStorage.getItem('klander:hidden-bc')) || [] } catch { return [] } })
   const hideBc = id => { const n = [...hiddenBc, id].slice(-30); setHiddenBc(n); try { localStorage.setItem('klander:hidden-bc', JSON.stringify(n)) } catch { /* ignore */ } }
@@ -137,7 +174,7 @@ export default function CalendarApp({ data, user }) {
   const colourOf = ev => harmonize(ev.birthday ? ev.birthday.person.colour : ev.friend ? ev.friend.colour : catMap[ev.category_id]?.colour || data.profile.colour)
 
   const step = dir => setDate(d =>
-    view === 'day' ? addDays(d, dir) : view === 'week' ? addWeeks(d, dir) : view === 'month' ? addMonths(d, dir) : addDays(d, dir * 30))
+    view === 'day' || view === 'people' ? addDays(d, dir) : view === 'week' ? addWeeks(d, dir) : view === 'month' ? addMonths(d, dir) : addDays(d, dir * 30))
 
   const openNew = start => setEditing({ start: start || defaultStart(date) })
   const openEvent = occ => (occ.birthday
@@ -159,6 +196,7 @@ export default function CalendarApp({ data, user }) {
     if (open === 'plans') openPlans()
     else if (open === 'up') openPlans({ tab: 'up' })
     else if (open === 'friends' || open === 'activity') openFriends()
+    else if (open?.startsWith('poll:')) setPollView({ id: open.slice(5) })
     else if (open?.startsWith('event:')) {
       const ev = data.events.find(e => e.id === open.slice(6))
       if (ev) { setDate(new Date(ev.starts_at)); setEditing({ event: ev }) }
@@ -179,7 +217,7 @@ export default function CalendarApp({ data, user }) {
     <div className={`app${season ? ' seasonal' : ''}`} style={season ? { '--season': season.colour } : undefined}>
       <header className="topbar">
         <div className="topbar-row">
-          <h1>{titleFor(view, date)}</h1>
+          <h1>{titleFor(view === 'people' ? 'day' : view, date)}</h1>
           {season && <span className="season" title={season.label}>{season.label}</span>}
           <button className="btn" style={{ padding: '8px 12px' }} onClick={() => setDate(new Date())}>Today</button>
           <button className="icon-btn" aria-label="Previous" onClick={() => step(-1)}>‹</button>
@@ -199,6 +237,11 @@ export default function CalendarApp({ data, user }) {
           {f.friends.length > 0 && <button className="pchip add plans" onClick={() => openPlans()}>
             <svg width="15" height="15" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M7 2v2H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2h-2V2h-2v2H9V2zm-2 7h14v11H5zm3 3v2h2v-2zm4 0v2h2v-2z"/></svg>
             Plans{pendingInvites > 0 && <span className="badge">{pendingInvites}</span>}</button>}
+          {so.groups.map(g => {
+            const others = f.friends.map(x => x.person.id).filter(id => !g.members.includes(id))
+            const on = others.length > 0 && others.every(id => f.hidden.includes(id)) && g.members.every(id => !f.hidden.includes(id))
+            return <button key={g.id} className="pchip add group-chip" aria-pressed={on} onClick={() => f.showGroup(g.members)}>{g.name}</button>
+          })}
           <button className="pchip" aria-pressed={!meHidden} onClick={() => f.toggleHidden(user.id)}><Avatar person={p} size={24} />You{fun && myBirthday && <Cake />}</button>
           {f.friends.map(({ person }) => (
             <button key={person.id} className="pchip" aria-pressed={!f.hidden.includes(person.id)} onClick={() => f.toggleHidden(person.id)}>
@@ -209,6 +252,15 @@ export default function CalendarApp({ data, user }) {
             {f.friends.length ? 'Friends' : '+ Add friends'}{requests + unseen > 0 && <span className="badge">{requests + unseen}</span>}
           </button>
         </div>
+        {countdowns.length > 0 && (
+          <div className="countdowns">
+            {countdowns.map(({ e, days }) => (
+              <button key={e.id} className="countdown" onClick={() => setEditing({ event: e })}>
+                <b>{days === 0 ? 'Today' : days}</b><span>{days === 0 ? '' : days === 1 ? 'day to' : 'days to'}</span><em>{e.title}</em>
+              </button>
+            ))}
+          </div>
+        )}
         {liveBroadcasts.filter(b => !hiddenBc.includes(b.id)).slice(0, 2).map(b => (
           <div key={b.id} className="bc-strip">
             <BroadcastCard b={b} person={f.people[b.user_id]} replies={pl.replies.filter(r => r.broadcast_id === b.id)} uid={user.id} people={f.people} compact
@@ -231,6 +283,9 @@ export default function CalendarApp({ data, user }) {
       </header>
 
       <main className="main">
+        {view === 'people' &&
+          <TimeGrid columns={peopleCols} occurrences={occurrences} colourOf={colourOf} now={now} onEvent={openEvent} onSlot={openNew} onDay={openDay}
+            onPerson={person => (person.id === user.id ? setSheet('settings') : setCard(person))} hour={theme.config.density || 52} />}
         {(view === 'day' || view === 'week') &&
           <TimeGrid days={view === 'day' ? [range.from] : Array.from({ length: 7 }, (_, i) => addDays(range.from, i))}
             occurrences={occurrences} colourOf={colourOf} now={now} onEvent={openEvent} onSlot={openNew} onDay={openDay} hour={theme.config.density || 52} />}
@@ -248,17 +303,18 @@ export default function CalendarApp({ data, user }) {
       {!data.online && <div className="offline-pill">Offline · showing saved calendar</div>}
       {toast && <div className="toast" role="status">{toast}</div>}
 
-      {editing && <EventEditor data={data} {...editing} friends={f.friends.map(x => x.person)} plans={pl} onClose={msg => { setEditing(null); if (msg) setToast(msg) }} />}
-      {sheet === 'plans' && <PlansSheet uid={user.id} me={data} plans={pl} people={f.people} friends={f.friends.map(x => x.person)} busyMap={busyMap}
+      {editing && <EventEditor data={data} {...editing} friends={f.friends.map(x => x.person)} groups={so.groups} plans={pl} onClose={msg => { setEditing(null); if (msg) setToast(msg) }} />}
+      {sheet === 'plans' && <PlansSheet uid={user.id} me={data} plans={pl} social={so} friendLinks={f.friends} plansWith={plansWith} onOpenPoll={id => setPollView({ id })} people={f.people} friends={f.friends.map(x => x.person)} busyMap={busyMap}
         initial={planInit} onPlan={startPlan} onClose={() => setSheet(null)} onOpenInvite={i => setInviteView(i)} />}
       {sheet === 'notify' && <NotificationsSheet n={nt} people={f.people} friends={f.friends.map(x => x.person)} onClose={() => setSheet(null)} onOpen={openUrl} />}
+      {pollView && so.polls.find(q => q.id === pollView.id) && <PollSheet poll={so.polls.find(q => q.id === pollView.id)} social={so} uid={user.id} me={p} people={f.people} onDecide={decidePoll} onClose={() => setPollView(null)} />}
       {inviteView && <InviteSheet invite={inviteView} plans={pl} people={f.people} me={p} onClose={() => setInviteView(null)} />}
       {viewing && <FriendEventSheet occ={viewing} onClose={() => setViewing(null)} />}
       {sheet === 'settings' && <Settings data={data} bd={bd} onClose={() => setSheet(null)} onOpenCalendars={() => setSheet('calendars')} onOpenAppearance={() => setSheet('appearance')} />}
       {sheet === 'appearance' && <AppearanceSheet data={data} onClose={() => setSheet(null)} />}
       {bdayView && <BirthdaySheet occ={bdayView} onClose={() => setBdayView(null)}
         onPlan={bdayView.birthday.me ? null : () => openPlans({ tab: 'find', hide: [bdayView.birthday.id], with: f.friends.map(x => x.person.id).filter(id => id !== bdayView.birthday.id).slice(0, 4), title: `${bdayView.birthday.short}'s birthday`, window: 'eve', days: 14 })} />}
-      {card && <FriendCard person={f.people[card.id] || card} birthday={bd.friends.find(b => b.user_id === card.id)} data={data} free={freeInfo(card.id)}
+      {card && <FriendCard person={f.people[card.id] || card} birthday={bd.friends.find(b => b.user_id === card.id)} data={data} free={freeInfo(card.id)} social={so}
         onFindTime={() => openPlans({ tab: 'find', with: [card.id] })}
         onClose={() => setCard(null)} onShowWeek={() => { f.showOnly(card.id); setCard(null); setSheet(null) }} />}
       {confetti && <Confetti colours={[p.colour, '#ffb020', '#ff5d8f', '#22c55e', '#7c3aed']} onDone={() => setConfetti(false)} />}
@@ -266,7 +322,7 @@ export default function CalendarApp({ data, user }) {
       {sheet === 'calendars' && <CalendarsSheet data={data} cal={cal} onClose={() => setSheet(null)} />}
       {imported && <ImportedEventSheet occ={imported} source={cal.sources.find(s => s.id === imported.source_id)}
         category={catMap[imported.category_id]} onClose={() => setImported(null)} onOpenCalendars={() => { setImported(null); setSheet('calendars') }} />}
-      {sheet === 'friends' && <FriendsSheet f={f} onClose={() => setSheet(null)} onPerson={person => { setSheet(null); setCard(person) }} />}
+      {sheet === 'friends' && <FriendsSheet f={f} social={so} onClose={() => setSheet(null)} onPerson={person => { setSheet(null); setCard(person) }} />}
     </div>
   )
 }

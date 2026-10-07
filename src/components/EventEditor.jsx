@@ -12,11 +12,12 @@ const join = (date, time) => parse(`${date} ${time || '00:00'}`, 'yyyy-MM-dd HH:
 
 const VIS = [
   ['friends', 'Friends', 'Friends see the title, time and place'],
+  ['close', 'Close', 'Close friends see the details. Other friends just see you are busy'],
   ['busy', 'Busy only', 'Friends just see that you are busy'],
   ['private', 'Private', 'Only you can see it']
 ]
 
-export default function EventEditor({ data, event, occurrence, start, end, title: title0, invite = [], hide = [], friends = [], plans, onClose }) {
+export default function EventEditor({ data, event, occurrence, start, end, title: title0, invite = [], hide = [], friends = [], groups = [], plans, onClose }) {
   const isNew = !event
   const s0 = event ? new Date(event.starts_at) : start
   const e0 = event ? new Date(event.ends_at) : end || addMinutes(start, 60)
@@ -40,6 +41,7 @@ export default function EventEditor({ data, event, occurrence, start, end, title
   const [location, setLocation] = useState(event?.location || '')
   const [notes, setNotes] = useState(event?.notes || '')
   const [remind, setRemind] = useState(event?.remind_minutes ?? 'default')
+  const [countdown, setCountdown] = useState(!!event?.countdown)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [confirmDelete, setConfirmDelete] = useState(false)
@@ -73,7 +75,7 @@ export default function EventEditor({ data, event, occurrence, start, end, title
       const row = await data.saveEvent({
         id: event?.id, title, all_day: allDay, starts_at: s.toISOString(), ends_at: e.toISOString(),
         rrule, exdates: event?.exdates || [], category_id: categoryId || null, visibility, location: location.trim(), notes: notes.trim(),
-        hidden_from: hiddenFrom, remind_minutes: remind === 'default' ? null : remind
+        hidden_from: hiddenFrom, remind_minutes: remind === 'default' ? null : remind, countdown
       })
       if (plans && (invitees.length || guestRows.length)) await plans.setInvitees(row.id, invitees)
       onClose(invitees.length && isNew ? `Invites sent to ${invitees.length} ${invitees.length === 1 ? 'friend' : 'friends'}.` : '')
@@ -132,6 +134,9 @@ export default function EventEditor({ data, event, occurrence, start, end, title
             </select>
           </label>
         )}
+        <div className="toggle-row"><span>Count down to it<br /><small className="muted">Shows "12 days to go" on your home screen</small></span>
+          <label className="switch"><input id="ev-countdown" type="checkbox" checked={countdown} onChange={e => setCountdown(e.target.checked)} aria-label="Count down to it" /><span /></label>
+        </div>
         {repeating && occurrence && <p className="muted small">Changes here apply to every repeat of this event.</p>}
       </div>
 
@@ -158,6 +163,15 @@ export default function EventEditor({ data, event, occurrence, start, end, title
       {friends.length > 0 && (
         <div className="group">
           <h3>Invite friends</h3>
+          {groups.length > 0 && (
+            <div className="pick-row">
+              {groups.map(g => {
+                const ids = g.members.filter(id => friends.some(f => f.id === id) && !hiddenFrom.includes(id))
+                const all = ids.length > 0 && ids.every(id => invitees.includes(id))
+                return <button key={g.id} type="button" className="ex-chip group-chip" aria-pressed={all} onClick={() => setInvitees(v => (all ? v.filter(x => !ids.includes(x)) : [...new Set([...v, ...ids])]))}>{g.name}</button>
+              })}
+            </div>
+          )}
           <div className="pick-row">
             {friends.map(p => {
               const g = guestRows.find(x => x.user_id === p.id)

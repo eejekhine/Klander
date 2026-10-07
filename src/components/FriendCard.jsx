@@ -7,7 +7,7 @@ import { nextBirthday } from '../lib/birthdays'
 import { DEFAULT_THEME, applyThemeConfig, getTheme, sanitize, themeName } from '../lib/themes'
 
 /** A friend's card: birthday, their theme, and "try their theme". */
-export default function FriendCard({ person, birthday, data, free, onClose, onShowWeek, onFindTime }) {
+export default function FriendCard({ person, birthday, data, free, social, onClose, onShowWeek, onFindTime }) {
   const before = useRef(null)
   const [trying, setTrying] = useState(false)
   const [msg, setMsg] = useState('')
@@ -46,6 +46,14 @@ export default function FriendCard({ person, birthday, data, free, onClose, onSh
           <button className="btn grow" onClick={onShowWeek}>Only {first}'s week</button>
         </div>
       </div>
+
+      {social && (
+        <div className="group">
+          <div className="toggle-row"><span>Close friend<br /><small className="muted">Close friends see events you mark "Close friends". Only you know who's on your list.</small></span>
+            <label className="switch"><input type="checkbox" checked={social.close.includes(person.id)} onChange={() => social.toggleClose(person.id).catch(e => setError(e.message))} aria-label="Close friend" /><span /></label>
+          </div>
+        </div>
+      )}
 
       <div className="group">
         <h3>Birthday</h3>

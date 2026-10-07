@@ -5,6 +5,7 @@ import { Avatar } from './FriendsSheet'
 import { fmt, isSameDay, timeLabel } from '../lib/dates'
 import { findTimes } from '../lib/freetime'
 import { RSVP, statusLabel } from '../lib/plans'
+import { catchUps, tally } from '../lib/social'
 
 const firstName = p => (p?.display_name || p?.username || '').split(/\s+/)[0]
 const TABS = [['plans', 'Plans'], ['find', 'Find a time'], ['up', 'Up for something']]
@@ -13,22 +14,23 @@ const WINDOWS = [['any', 'Any time', 8, 23], ['day', 'Daytime', 9, 17], ['eve', 
 const hrs = m => (m >= 60 ? `${Math.floor(m / 60)}h${m % 60 ? ` ${m % 60}m` : ''}` : `${m}m`)
 const dayLabel = d => (isSameDay(d, new Date()) ? 'Today' : isSameDay(d, addDays(new Date(), 1)) ? 'Tomorrow' : fmt(d, 'EEE d MMM'))
 
-export default function PlansSheet({ uid, me, plans, people, friends, busyMap, initial = {}, onPlan, onClose, onOpenInvite }) {
+export default function PlansSheet({ uid, me, plans, social, people, friends, friendLinks = [], plansWith = {}, busyMap, initial = {}, onPlan, onClose, onOpenInvite, onOpenPoll }) {
   const [tab, setTab] = useState(initial.tab || 'plans')
+  const [findWith, setFindWith] = useState(null)
   return (
     <Sheet title="Plans" onClose={onClose}>
       <div className="seg" role="tablist" style={{ width: '100%' }}>
         {TABS.map(([k, l]) => <button key={k} role="tab" style={{ flex: 1 }} aria-pressed={tab === k} onClick={() => setTab(k)}>{l}{k === 'plans' && plans.invites.filter(i => i.my_status === 'invited').length > 0 && <span className="badge">{plans.invites.filter(i => i.my_status === 'invited').length}</span>}</button>)}
       </div>
-      {tab === 'plans' && <PlansTab plans={plans} people={people} onOpenInvite={onOpenInvite} onFind={() => setTab('find')} />}
-      {tab === 'find' && <FindTab uid={uid} me={me} friends={friends} busyMap={busyMap} initial={initial} onPlan={onPlan} />}
+      {tab === 'plans' && <PlansTab uid={uid} plans={plans} social={social} people={people} friendLinks={friendLinks} plansWith={plansWith} onOpenInvite={onOpenInvite} onOpenPoll={onOpenPoll} onFind={w => { setFindWith(w); setTab('find') }} />}
+      {tab === 'find' && <FindTab uid={uid} me={me} friends={friends} groups={social.groups} social={social} busyMap={busyMap} initial={findWith ? { ...initial, with: findWith } : initial} onPlan={onPlan} onPolled={id => { setTab('plans'); onOpenPoll(id) }} />}
       {tab === 'up' && <UpTab uid={uid} me={me} plans={plans} people={people} onPlan={onPlan} />}
     </Sheet>
   )
 }
 
 /* ---------------- Plans: invites waiting for an answer + what's coming up ---------------- */
-function PlansTab({ plans, people, onOpenInvite, onFind }) {
+function PlansTab({ uid, plans, social, people, friendLinks, plansWith, onOpenInvite, onOpenPoll, onFind }) {
   const [error, setError] = useState('')
   const now = new Date()
   const pending = plans.invites.filter(i => i.my_status === 'invited' && (i.rrule || new Date(i.ends_at) > now))
@@ -52,8 +54,10 @@ function PlansTab({ plans, people, onOpenInvite, onFind }) {
             <small className={`rsvp ${i.my_status}`}>{statusLabel(i.my_status)}</small>
           </button>
         ))}
-        <button className="btn block" onClick={onFind}>Find a time with friends</button>
+        <button className="btn block" onClick={() => onFind(null)}>Find a time with friends</button>
       </div>
+      <PollList uid={uid} social={social} people={people} onOpenPoll={onOpenPoll} />
+      <CatchUp uid={uid} friendLinks={friendLinks} plansWith={plansWith} onFind={onFind} />
       {error && <p className="error" role="alert">{error}</p>}
       <p className="small muted" style={{ margin: 0 }}>Plans you host live on your calendar. Tap one to see who's going.</p>
     </>
@@ -76,12 +80,26 @@ export function InviteCard({ i, host, onOpen, onAnswer }) {
 }
 
 /* ---------------- Find a time ---------------- */
-function FindTab({ uid, me, friends, busyMap, initial, onPlan }) {
+function FindTab({ uid, me, friends, groups: friendGroups = [], social, busyMap, initial, onPlan, onPolled }) {
   const [picked, setPicked] = useState(initial.with || [])
   const [hide] = useState(initial.hide || [])
   const [dur, setDur] = useState(initial.duration || 120)
   const [win, setWin] = useState(initial.window || 'any')
   const [days, setDays] = useState(initial.days || 7)
+  const [voteMode, setVoteMode] = useState(false)
+  const [chosen, setChosen] = useState([]) // slot start times (ms) picked for a poll
+  const [pollTitle, setPollTitle] = useState(initial.title || '')
+  const [sending, setSending] = useState(false)
+  const [pollErr, setPollErr] = useState('')
+  const pickSlot = s => setChosen(c => (c.includes(+s) ? c.filter(x => x !== +s) : c.length >= 5 ? c : [...c, +s]))
+  const sendPoll = async () => {
+    if (!pollTitle.trim()) return setPollErr('Give it a name, like "Cinema".')
+    setSending(true); setPollErr('')
+    try {
+      const id = await social.createPoll({ title: pollTitle, options: [...chosen].sort().map(t => ({ start: new Date(t), end: addMinutes(new Date(t), dur) })), invitees: picked })
+      onPolled(id)
+    } catch (e) { setPollErr(e.message); setSending(false) }
+  }
   const visible = friends.filter(f => !hide.includes(f.id))
   const toggle = id => setPicked(p => (p.includes(id) ? p.filter(x => x !== id) : [...p, id]))
   const w = WINDOWS.find(x => x[0] === win)
@@ -106,6 +124,15 @@ function FindTab({ uid, me, friends, busyMap, initial, onPlan }) {
       <div className="group">
         <h3>Who's coming?</h3>
         {visible.length === 0 && <p className="small muted" style={{ margin: 0 }}>Add some friends first.</p>}
+        {friendGroups.length > 0 && (
+          <div className="pick-row">
+            {friendGroups.map(g => {
+              const ids = g.members.filter(id => visible.some(f => f.id === id))
+              const all = ids.length > 0 && ids.every(id => picked.includes(id))
+              return <button key={g.id} className="ex-chip group-chip" aria-pressed={all} onClick={() => setPicked(p => (all ? p.filter(x => !ids.includes(x)) : [...new Set([...p, ...ids])]))}>{g.name}</button>
+            })}
+          </div>
+        )}
         <div className="pick-row">
           {visible.map(f => (
             <button key={f.id} className="pchip" aria-pressed={picked.includes(f.id)} onClick={() => toggle(f.id)}>
@@ -125,6 +152,12 @@ function FindTab({ uid, me, friends, busyMap, initial, onPlan }) {
       </div>
 
       {!picked.length && <p className="small muted" style={{ margin: 0 }}>Pick at least one friend. Klander only looks at when people are busy, never what they're doing.</p>}
+      {result && (picked.length > 0) && (
+        <div className="toggle-row">
+          <span>Let them vote<br /><small className="muted">Pick up to 5 times and send a poll instead</small></span>
+          <label className="switch"><input type="checkbox" checked={voteMode} onChange={e => { setVoteMode(e.target.checked); setChosen([]) }} aria-label="Let them vote" /><span /></label>
+        </div>
+      )}
       {result && (
         <div className="group">
           <h3>Everyone's free</h3>
@@ -134,9 +167,9 @@ function FindTab({ uid, me, friends, busyMap, initial, onPlan }) {
               <b>{dayLabel(g.day)}</b>
               <div className="slot-list">
                 {g.items.map(x => (
-                  <button key={x.s.getTime()} className="slot" onClick={() => plan(x.s)}>
+                  <button key={x.s.getTime()} className="slot" aria-pressed={voteMode ? chosen.includes(+x.s) : undefined} onClick={() => (voteMode ? pickSlot(x.s) : plan(x.s))}>
                     {fmt(x.s, 'HH:mm')}–{fmt(x.e, 'HH:mm')}
-                    <small>{hrs(differenceInMinutes(x.e, x.s))} free · Plan</small>
+                    <small>{hrs(differenceInMinutes(x.e, x.s))} free · {voteMode ? (chosen.includes(+x.s) ? 'Added ✓' : 'Add to poll') : 'Plan'}</small>
                   </button>
                 ))}
               </div>
@@ -148,12 +181,21 @@ function FindTab({ uid, me, friends, busyMap, initial, onPlan }) {
         <div className="group">
           <h3>Everyone but one</h3>
           {result.allBut.map(x => (
-            <button key={`${x.missing}-${x.s.getTime()}`} className="plan-row" onClick={() => plan(x.s, x.missing)}>
+            <button key={`${x.missing}-${x.s.getTime()}`} className="plan-row" aria-pressed={voteMode ? chosen.includes(+x.s) : undefined} onClick={() => (voteMode ? pickSlot(x.s) : plan(x.s, x.missing))}>
               <span className="who-missing">{dayLabel(x.day)}</span>
               <span><b>{fmt(x.s, 'HH:mm')}–{fmt(x.e, 'HH:mm')}</b><small>Everyone except {x.missing === uid ? 'you' : firstName(byId[x.missing])}</small></span>
-              <small>Plan</small>
+              <small>{voteMode ? (chosen.includes(+x.s) ? 'Added ✓' : 'Add') : 'Plan'}</small>
             </button>
           ))}
+        </div>
+      )}
+      {voteMode && (
+        <div className="group sheet-sticky poll-send">
+          <input className="input" value={pollTitle} onChange={e => setPollTitle(e.target.value)} placeholder="What's the plan? e.g. Cinema" maxLength={120} />
+          <button className="btn primary block" disabled={sending || chosen.length < 2} onClick={sendPoll}>
+            {sending ? 'Sending…' : chosen.length < 2 ? 'Pick at least 2 times' : `Ask ${picked.length} ${picked.length === 1 ? 'friend' : 'friends'} to vote on ${chosen.length} times`}
+          </button>
+          {pollErr && <p className="error" role="alert">{pollErr}</p>}
         </div>
       )}
     </>
@@ -274,6 +316,54 @@ function StatusEditor({ me }) {
         {active && <button className="btn grow" onClick={() => save(true)}>Clear</button>}
       </div>
       {msg && <p className="small" style={{ color: 'var(--good)', margin: 0 }}>{msg}</p>}
+    </div>
+  )
+}
+
+/* ---------------- Polls waiting on votes ---------------- */
+function PollList({ uid, social, people, onOpenPoll }) {
+  const open = social.polls.filter(p => !p.decided_option && p.options.some(o => new Date(o.ends_at) > new Date()))
+  if (!open.length) return null
+  return (
+    <div className="group">
+      <h3>Polls</h3>
+      {open.map(p => {
+        const mine = p.owner_id === uid
+        const voted = p.options.some(o => o.votes.some(v => v.user_id === uid))
+        const voters = new Set(p.options.flatMap(o => o.votes.map(v => v.user_id))).size
+        const best = [...p.options].sort((a, b) => tally(b).score - tally(a).score)[0]
+        return (
+          <button key={p.id} className="plan-row" onClick={() => onOpenPoll(p.id)}>
+            <Avatar person={mine ? null : people[p.owner_id]} size={30} />
+            <span><b>{p.title}</b><small>{mine ? `${voters} of ${p.invitees.length} voted${best && tally(best).score ? ` · best so far ${fmt(new Date(best.starts_at), 'EEE HH:mm')}` : ''}` : `${firstName(people[p.owner_id])} is asking · ${p.options.length} times`}</small></span>
+            {!mine && !voted ? <small className="rsvp maybe">Vote</small> : mine ? <small className="rsvp">Yours</small> : <small className="rsvp going">Voted</small>}
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
+/* ---------------- Catch-up nudges ---------------- */
+const NUDGE_KEY = 'klander:nudge-hidden'
+function CatchUp({ friendLinks, plansWith, onFind }) {
+  const [hidden, setHidden] = useState(() => { try { return JSON.parse(localStorage.getItem(NUDGE_KEY)) || {} } catch { return {} } })
+  const list = catchUps(friendLinks, plansWith).filter(x => !(hidden[x.person.id] > Date.now())).slice(0, 3)
+  if (!list.length) return null
+  const hide = id => { const n = { ...hidden, [id]: Date.now() + 7 * 864e5 }; setHidden(n); try { localStorage.setItem(NUDGE_KEY, JSON.stringify(n)) } catch { /* ignore */ } }
+  return (
+    <div className="group">
+      <h3>Catch up</h3>
+      {list.map(({ person, last }) => (
+        <div key={person.id} className="plan-row" style={{ cursor: 'default' }}>
+          <Avatar person={person} size={30} />
+          <span><b>{firstName(person)}</b><small>{last ? `No plans together since ${fmt(new Date(last), 'd MMM')}` : 'No plans together yet'}</small></span>
+          <span className="row" style={{ gap: 4 }}>
+            <button className="btn primary" style={{ padding: '6px 10px' }} onClick={() => onFind([person.id])}>Find a time</button>
+            <button className="linklike small" aria-label={`Hide ${firstName(person)} for a week`} onClick={() => hide(person.id)}>Later</button>
+          </span>
+        </div>
+      ))}
     </div>
   )
 }

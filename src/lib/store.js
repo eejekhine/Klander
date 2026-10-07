@@ -86,7 +86,7 @@ export function useKlanderData(user) {
     const row = {
       owner_id: uid, title: ev.title.trim(), notes: ev.notes || null, location: ev.location || null,
       starts_at: ev.starts_at, ends_at: ev.ends_at, all_day: ev.all_day, category_id: ev.category_id || null,
-      visibility: ev.visibility, rrule: ev.rrule || null, exdates: ev.exdates || [], hidden_from: ev.hidden_from || [], remind_minutes: ev.remind_minutes ?? null
+      visibility: ev.visibility, rrule: ev.rrule || null, exdates: ev.exdates || [], hidden_from: ev.hidden_from || [], remind_minutes: ev.remind_minutes ?? null, countdown: !!ev.countdown
     }
     if (!ev.id) row.source = ev.source || 'manual'
     const q = ev.id

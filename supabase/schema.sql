@@ -369,3 +369,43 @@ create table public.notifications (                 -- inbox + push queue
 -- cron 'klander-push' every minute: private.run_push() -> Edge Function push
 --   makes due reminders (rrule-aware, time-zone safe), sends Web Push with VAPID, skips quiet hours,
 --   drops dead subscriptions (404/410), deletes notifications older than 30 days.
+
+-- ============================================================
+-- Phase 7 (part 2): close friends, groups, countdowns, time polls
+-- ============================================================
+create table public.close_friends (                 -- your private list; RLS owner only, friend must be a friend
+  user_id uuid not null default auth.uid() references public.profiles(id) on delete cascade,
+  friend_id uuid not null references public.profiles(id) on delete cascade,
+  created_at timestamptz not null default now(),
+  primary key (user_id, friend_id)
+);
+-- is_close_to_me(owner) -> am I on their list?  events.visibility now allows 'close':
+-- friend_events() shows close events in full to close friends and as 'Busy' to everyone else;
+-- log_event_activity() never puts a close event's title in the shared activity feed.
+
+create table public.friend_groups (                 -- your own groups of friends; RLS owner only
+  id uuid primary key default gen_random_uuid(),
+  owner_id uuid not null default auth.uid() references public.profiles(id) on delete cascade,
+  name text not null, members uuid[] not null default '{}', sort int not null default 0,
+  created_at timestamptz not null default now()
+);
+
+alter table public.events add column countdown boolean not null default false;
+
+create table public.polls (id uuid primary key default gen_random_uuid(),
+  owner_id uuid not null default auth.uid() references public.profiles(id) on delete cascade,
+  title text not null, location text, note text, closes_at timestamptz,
+  decided_option uuid, event_id uuid references public.events(id) on delete set null,
+  created_at timestamptz not null default now());
+create table public.poll_options (id uuid primary key default gen_random_uuid(),
+  poll_id uuid not null references public.polls(id) on delete cascade,
+  starts_at timestamptz not null, ends_at timestamptz not null, check (ends_at > starts_at));
+create table public.poll_invitees (poll_id uuid not null references public.polls(id) on delete cascade,
+  user_id uuid not null references public.profiles(id) on delete cascade, primary key (poll_id, user_id));
+create table public.poll_votes (option_id uuid not null references public.poll_options(id) on delete cascade,
+  user_id uuid not null default auth.uid() references public.profiles(id) on delete cascade,
+  vote text not null check (vote in ('yes','maybe','no')), updated_at timestamptz not null default now(),
+  primary key (option_id, user_id));
+-- RLS: can_see_poll(p) = owner or invitee. Only the owner adds options/invitees (friends only).
+-- Invitees vote only for themselves, and only until the owner picks a time (decided_option).
+-- Triggers: notify_on_poll_invite -> invitee; notify_on_poll_vote -> owner (one per voter, held 2 min).

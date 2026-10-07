@@ -17,7 +17,7 @@ const cors = {
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { ...cors, 'Content-Type': 'application/json' } })
 const admin = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!, { auth: { persistSession: false } })
-const SOCIAL = new Set(['friend_event', 'invite', 'rsvp', 'broadcast', 'broadcast_reply', 'request', 'accepted'])
+const SOCIAL = new Set(['friend_event', 'invite', 'rsvp', 'broadcast', 'broadcast_reply', 'request', 'accepted', 'poll', 'poll_vote'])
 
 /* ---------- VAPID keys: made once, kept in the database ---------- */
 async function vapid() {

@@ -97,7 +97,13 @@ export function useFriends(uid) {
     const already = all.every(x => x === id ? !h.includes(x) : h.includes(x))
     return already ? [] : all.filter(x => x !== id)
   })
-  return { activity, friends, incoming, outgoing, people, friendEvents, hidden, toggleHidden, showOnly, refresh, sendRequest, accept, remove, inviteCode, acceptInvite }
+  // Show you plus one group of friends; calling it again shows everyone.
+  const showGroup = ids => setHidden(h => {
+    const want = friends.map(x => x.person.id).filter(id => !ids.includes(id))
+    const same = want.length === h.length && want.every(id => h.includes(id))
+    return same ? [] : want
+  })
+  return { activity, friends, incoming, outgoing, people, friendEvents, hidden, toggleHidden, showOnly, showGroup, refresh, sendRequest, accept, remove, inviteCode, acceptInvite }
 }
 
 /* ---------- invite links: ?invite=CODE is remembered until the person is signed in ---------- */

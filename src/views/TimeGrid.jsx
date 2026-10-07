@@ -1,14 +1,19 @@
 import { useEffect, useRef } from 'react'
 import { differenceInMinutes } from 'date-fns'
 import { evVars } from '../lib/themes'
+import { Avatar } from '../components/FriendsSheet'
 import { allDayOn, fmt, isSameDay, layoutDay, startOfDay, timeLabel } from '../lib/dates'
 
 const GUTTER = 44
 
-export default function TimeGrid({ days, occurrences, colourOf, now, onEvent, onSlot, onDay, hour: HOUR = 52 }) {
+/** Day/week grid. Pass `columns` ([{ key, day, person, label, occurrences }]) for the side-by-side view instead of `days`. */
+export default function TimeGrid({ days: daysIn, columns, occurrences, colourOf, now, onEvent, onSlot, onDay, onPerson, hour: HOUR = 52 }) {
   const scrollRef = useRef(null)
-  const cols = `${GUTTER}px repeat(${days.length}, minmax(0, 1fr))`
-  const single = days.length === 1
+  const C = columns || daysIn.map(d => ({ key: d.getTime(), day: d, occurrences }))
+  const days = C.map(c => c.day)
+  const people = !!columns
+  const cols = `${GUTTER}px repeat(${C.length}, minmax(0, 1fr))`
+  const single = C.length === 1
 
   // Scroll to roughly "now" (or 07:00) on first show and when the visible range changes.
   const firstDay = days[0].getTime()
@@ -21,7 +26,7 @@ export default function TimeGrid({ days, occurrences, colourOf, now, onEvent, on
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [firstDay, days.length, HOUR])
 
-  const hasAllDay = days.some(d => allDayOn(occurrences, d).length)
+  const hasAllDay = C.some(c => allDayOn(c.occurrences, c.day).length)
 
   const slotClick = (e, day) => {
     if (e.target !== e.currentTarget) return
@@ -35,9 +40,13 @@ export default function TimeGrid({ days, occurrences, colourOf, now, onEvent, on
     <div className="tg">
       <div className="tg-head" style={{ gridTemplateColumns: cols }}>
         <div />
-        {days.map(d => (
-          <button key={d.getTime()} className={`tg-dayhead${isSameDay(d, now) ? ' today' : ''}`} onClick={() => onDay(d)}>
-            <span>{fmt(d, single ? 'EEEE' : 'EEE')}</span><b>{fmt(d, 'd')}</b>
+        {C.map(c => people ? (
+          <button key={c.key} className="tg-dayhead person" onClick={() => onPerson?.(c.person)}>
+            <Avatar person={c.person} size={26} /><span>{c.label}</span>
+          </button>
+        ) : (
+          <button key={c.key} className={`tg-dayhead${isSameDay(c.day, now) ? ' today' : ''}`} onClick={() => onDay(c.day)}>
+            <span>{fmt(c.day, single ? 'EEEE' : 'EEE')}</span><b>{fmt(c.day, 'd')}</b>
           </button>
         ))}
       </div>
@@ -45,10 +54,10 @@ export default function TimeGrid({ days, occurrences, colourOf, now, onEvent, on
       {hasAllDay && (
         <div className="tg-allday" style={{ gridTemplateColumns: cols }}>
           <div className="label">all-day</div>
-          {days.map(d => (
-            <div key={d.getTime()} className="cell">
+          {C.map(({ key, day: d, occurrences }) => (
+            <div key={key} className="cell">
               {allDayOn(occurrences, d).map(o =>
-                <button key={o.key} className={chipClass(o)} style={evVars(colourOf(o))} onClick={() => onEvent(o)}>{o.birthday && <Cake />}{o.birthday && !single ? o.birthday.short : <>{o.friend ? `${first(o.friend)}: ` : ''}{o.title}</>}</button>)}
+                <button key={o.key} className={chipClass(o)} style={evVars(colourOf(o))} onClick={() => onEvent(o)}>{o.birthday && <Cake />}{o.birthday && !single ? o.birthday.short : <>{o.friend && !people ? `${first(o.friend)}: ` : ''}{o.title}</>}</button>)}
             </div>
           ))}
         </div>
@@ -59,10 +68,10 @@ export default function TimeGrid({ days, occurrences, colourOf, now, onEvent, on
           <div className="tg-gutter">
             {Array.from({ length: 23 }, (_, i) => <span key={i} style={{ top: (i + 1) * HOUR }}>{String(i + 1).padStart(2, '0')}:00</span>)}
           </div>
-          {days.map(d => {
+          {C.map(({ key, day: d, occurrences }) => {
             const today = isSameDay(d, now)
             return (
-              <div key={d.getTime()} className={`tg-col${today ? ' today' : ''}`} onClick={e => slotClick(e, d)}>
+              <div key={key} className={`tg-col${today && !people ? ' today' : ''}`} onClick={e => slotClick(e, d)}>
                 {Array.from({ length: 24 }, (_, i) => <div key={i} className="hourline" style={{ top: i * HOUR, pointerEvents: 'none' }} />)}
                 {single && Array.from({ length: 24 }, (_, i) => <div key={'h' + i} className="halfline" style={{ top: i * HOUR + HOUR / 2, pointerEvents: 'none' }} />)}
                 {layoutDay(occurrences, d).map(({ ev, top, bottom, col, cols: n }) => {
@@ -70,13 +79,13 @@ export default function TimeGrid({ days, occurrences, colourOf, now, onEvent, on
                   return (
                     <button key={ev.key} className={`ev${ev.plan ? ' plan' : ev.friend ? ' friend' : ''}${ev.friend && ev.visibility === 'busy' ? ' busy' : ''}`} onClick={() => onEvent(ev)}
                       style={{ ...evVars(colourOf(ev)), top: top / 60 * HOUR + 1, height: h - 2, left: `calc(${col / n * 100}% + 2px)`, width: `calc(${100 / n}% - 4px)` }}>
-                      <b>{ev.friend && <span className="who-tag">{first(ev.friend)} </span>}{ev.title}</b>
+                      <b>{ev.friend && !people && <span className="who-tag">{first(ev.friend)} </span>}{ev.title}</b>
                       {h > 34 && <small>{timeLabel(ev)}</small>}
                       {h > 52 && ev.location && <small>{ev.location}</small>}
                     </button>
                   )
                 })}
-                {today && <div className="nowline" style={{ top: differenceInMinutes(now, startOfDay(now)) / 60 * HOUR }} />}
+                {isSameDay(d, now) && <div className="nowline" style={{ top: differenceInMinutes(now, startOfDay(now)) / 60 * HOUR }} />}
               </div>
             )
           })}

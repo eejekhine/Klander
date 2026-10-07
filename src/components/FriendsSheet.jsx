@@ -20,7 +20,7 @@ export function Avatar({ person, size = 38 }) {
   return <span className="avatar" style={style} aria-hidden="true">{!person?.avatar_url && initials(person)}</span>
 }
 
-export default function FriendsSheet({ f, onClose, onPerson }) {
+export default function FriendsSheet({ f, social, onClose, onPerson }) {
   const [username, setUsername] = useState('')
   const [busy, setBusy] = useState(false)
   const [msg, setMsg] = useState('')
@@ -119,7 +119,7 @@ export default function FriendsSheet({ f, onClose, onPerson }) {
             <div key={l.id} className="person-row">
               <button className="person-open" onClick={() => onPerson?.(person)} aria-label={`Open ${person.display_name || person.username}`}>
                 <Avatar person={person} />
-                <div className="who"><b>{person.display_name || person.username}</b><small>@{person.username} · Birthday &amp; theme ›</small></div>
+                <div className="who"><b>{person.display_name || person.username}{social?.close.includes(person.id) && <span className="close-star" title="Close friend"> ★</span>}</b><small>@{person.username} · Card ›</small></div>
               </button>
               {confirmRemove === l.id
                 ? <span className="row">
@@ -137,6 +137,8 @@ export default function FriendsSheet({ f, onClose, onPerson }) {
         })}
       </div>
 
+      {social && f.friends.length > 1 && <Groups social={social} friends={f.friends.map(x => x.person)} />}
+
       {f.outgoing.length > 0 && (
         <div className="group">
           <h3>Waiting for them</h3>
@@ -150,5 +152,51 @@ export default function FriendsSheet({ f, onClose, onPerson }) {
         </div>
       )}
     </Sheet>
+  )
+}
+
+/* Your own groups of friends (only you see them). Use them to filter the calendar, find a time or invite in one tap. */
+function Groups({ social, friends }) {
+  const [editing, setEditing] = useState(null) // { id?, name, members }
+  const [confirm, setConfirm] = useState(null)
+  const [error, setError] = useState('')
+  const first = p => (p.display_name || p.username).split(/\s+/)[0]
+  const byId = Object.fromEntries(friends.map(p => [p.id, p]))
+  const save = async () => {
+    setError('')
+    if (!editing.name.trim()) return setError('Give the group a name.')
+    if (!editing.members.length) return setError('Pick at least one friend.')
+    try { await social.saveGroup(editing); setEditing(null) } catch (e) { setError(e.message) }
+  }
+  return (
+    <div className="group">
+      <h3>Groups</h3>
+      <p className="small muted" style={{ margin: 0 }}>Only you see your groups. Tap one above the calendar to see just them, or use it to find a time.</p>
+      {social.groups.map(g => editing?.id === g.id ? null : (
+        <div key={g.id} className="person-row">
+          <span className="group-stack">{g.members.slice(0, 3).map(id => byId[id] && <Avatar key={id} person={byId[id]} size={24} />)}</span>
+          <div className="who"><b>{g.name}</b><small>{g.members.map(id => byId[id] && first(byId[id])).filter(Boolean).join(', ')}</small></div>
+          {confirm === g.id
+            ? <span className="row"><button className="btn danger" style={{ padding: '6px 10px' }} onClick={() => social.deleteGroup(g.id).catch(e => setError(e.message))}>Delete</button><button className="btn ghost" style={{ padding: '6px 8px' }} onClick={() => setConfirm(null)}>Keep</button></span>
+            : <span className="row"><button className="linklike small" onClick={() => setEditing({ ...g })}>Edit</button><button className="linklike small" style={{ color: 'var(--danger)' }} onClick={() => setConfirm(g.id)}>Delete</button></span>}
+        </div>
+      ))}
+      {editing && (
+        <div className="group" style={{ background: 'var(--bg)' }}>
+          <input id="group-name" className="input" value={editing.name} onChange={e => setEditing({ ...editing, name: e.target.value })} placeholder="e.g. Ballers, Uni lot, Family" maxLength={40} autoFocus />
+          <div className="pick-row">
+            {friends.map(p => (
+              <button key={p.id} type="button" className="pchip" aria-pressed={editing.members.includes(p.id)}
+                onClick={() => setEditing({ ...editing, members: editing.members.includes(p.id) ? editing.members.filter(x => x !== p.id) : [...editing.members, p.id] })}>
+                <Avatar person={p} size={22} />{first(p)}
+              </button>
+            ))}
+          </div>
+          <div className="row"><button className="btn primary" onClick={save}>Save group</button><button className="btn ghost" onClick={() => setEditing(null)}>Cancel</button></div>
+        </div>
+      )}
+      {error && <p className="error">{error}</p>}
+      {!editing && <button className="btn block" onClick={() => setEditing({ name: '', members: [] })}>+ New group</button>}
+    </div>
   )
 }
