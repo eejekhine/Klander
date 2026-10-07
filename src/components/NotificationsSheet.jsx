@@ -8,6 +8,7 @@ const KINDS = [
   ['friend_events', 'Friends add or change events', 'Grouped, so a busy friend sends one alert, not ten'],
   ['plans', 'Invites and answers', 'Someone invites you, or says Going to your plan'],
   ['broadcasts', 'Up for something', 'A friend is free and looking for plans'],
+  ['chat', 'Messages', 'New chat messages (mute a single chat from inside it)'],
   ['requests', 'Friend requests', ''],
   ['reminders', 'Reminders for your events', '']
 ]

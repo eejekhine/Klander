@@ -28,12 +28,15 @@ import InviteSheet from './components/InviteSheet'
 import { usePlans } from './lib/plans'
 import { useNotifications } from './lib/notify'
 import { useSocial } from './lib/social'
+import Swipe from './components/Swipe'
+import ChatScreen from './components/ChatScreen'
+import { useChats } from './lib/chat'
 import PollSheet from './components/PollSheet'
 import { differenceInCalendarDays } from 'date-fns'
 import NotificationsSheet, { BellIcon } from './components/NotificationsSheet'
 import { buildBusyMap, freeNow } from './lib/freetime'
 
-const VIEWS = [['day', 'Day'], ['week', 'Week'], ['month', 'Month'], ['agenda', 'List'], ['people', 'People']]
+const VIEWS = [['day', 'Day', 'One day, in detail'], ['week', 'Week', 'Seven days at a glance'], ['month', 'Month', 'The whole month'], ['agenda', 'List', 'Everything coming up'], ['people', 'People', 'Everyone side by side for a day']]
 const readView = () => { try { return localStorage.getItem('klander:view') || 'week' } catch { return 'week' } }
 
 export default function CalendarApp({ data, user }) {
@@ -49,6 +52,13 @@ export default function CalendarApp({ data, user }) {
   const pl = usePlans(user.id)
   const nt = useNotifications(user.id)
   const so = useSocial(user.id)
+  const [menu, setMenu] = useState(null) // 'view' | 'add'
+  const ch = useChats(user.id)
+  const chatUnread = ch.unread
+  const [chatOpen, setChatOpen] = useState(null)
+  const [smartText, setSmartText] = useState('')
+  const openChat = id => { setCard(null); setInviteView(null); setEditing(null); setChatOpen(id || null); setSheet('chat') }
+  const startChatWith = fn => fn().then(openChat).catch(e => setToast(e.message))
   const [pollView, setPollView] = useState(null)
   const [planInit, setPlanInit] = useState({})
   const [inviteView, setInviteView] = useState(null)
@@ -197,6 +207,7 @@ export default function CalendarApp({ data, user }) {
     else if (open === 'up') openPlans({ tab: 'up' })
     else if (open === 'friends' || open === 'activity') openFriends()
     else if (open?.startsWith('poll:')) setPollView({ id: open.slice(5) })
+    else if (open?.startsWith('chat:')) openChat(open.slice(5))
     else if (open?.startsWith('event:')) {
       const ev = data.events.find(e => e.id === open.slice(6))
       if (ev) { setDate(new Date(ev.starts_at)); setEditing({ event: ev }) }
@@ -213,112 +224,169 @@ export default function CalendarApp({ data, user }) {
 
   const p = data.profile
   const requests = f.incoming.length
+  const upcoming = expandEvents([...data.events, ...goingPlans], now, addDays(now, 30)).slice(0, 25)
+    .map(o => ({ id: o.id, owner_id: o.owner_id, title: o.title, starts_at: o.start.toISOString(), ends_at: o.end.toISOString(), all_day: o.all_day, location: o.location }))
+  const openEventRef = ref => {
+    const own = data.events.find(e => e.id === ref.id)
+    const inv = pl.invites.find(i => i.id === ref.id)
+    if (own) { setSheet(null); setEditing({ event: own }) }
+    else if (inv) setInviteView(inv)
+    else { setSheet(null); if (ref.starts_at) setDate(new Date(ref.starts_at)); setToast("That's on their calendar. You can see it on that day.") }
+  }
+  const showsToday = now >= range.from && now < range.to
+  // One slim, swipeable row of "today" cards: countdowns, friends looking for plans, birthdays
+  const cards = [
+    ...(soon.length > 0 && dismissed !== todayKey ? [(
+      <div key="bday" className="card bday-card">
+        <Cake size={16} />
+        <span>{(() => {
+          const b = soon[0]
+          const who = b.me ? 'your' : `${(b.person.display_name || b.person.username).split(/\s+/)[0]}'s`
+          const when = b.next.inDays === 0 ? 'today' : b.next.inDays === 1 ? 'tomorrow' : fmt(b.next.date, 'EEEE')
+          return b.me && b.next.inDays === 0 ? <>Happy birthday, <b>{first(p)}</b>!</> : <><b>{who[0].toUpperCase() + who.slice(1)}</b> birthday {when}</>
+        })()}{soon.length > 1 ? <small> +{soon.length - 1}</small> : null}</span>
+        <button className="x" aria-label="Dismiss" onClick={dismissBanner}>×</button>
+      </div>)] : []),
+    ...countdowns.map(({ e, days }) => (
+      <button key={e.id} className="card countdown" onClick={() => setEditing({ event: e })}>
+        <b>{days === 0 ? 'Today' : days}</b><span>{days === 0 ? '' : days === 1 ? 'day to' : 'days to'}</span><em>{e.title}</em>
+      </button>)),
+    ...liveBroadcasts.filter(b => !hiddenBc.includes(b.id)).slice(0, 3).map(b => (
+      <div key={b.id} className="card bc-card">
+        <BroadcastCard b={b} person={f.people[b.user_id]} replies={pl.replies.filter(r => r.broadcast_id === b.id)} uid={user.id} people={f.people} compact
+          onReply={v => pl.reply(b.id, v).catch(e => setToast(e.message))} />
+        <button className="x" aria-label="Hide" onClick={() => hideBc(b.id)}>×</button>
+      </div>))
+  ]
   return (
     <div className={`app${season ? ' seasonal' : ''}`} style={season ? { '--season': season.colour } : undefined}>
       <header className="topbar">
         <div className="topbar-row">
-          <h1>{titleFor(view === 'people' ? 'day' : view, date)}</h1>
-          {season && <span className="season" title={season.label}>{season.label}</span>}
-          <button className="btn" style={{ padding: '8px 12px' }} onClick={() => setDate(new Date())}>Today</button>
-          <button className="icon-btn" aria-label="Previous" onClick={() => step(-1)}>‹</button>
-          <button className="icon-btn" aria-label="Next" onClick={() => step(1)}>›</button>
-          <button className="icon-btn bell" aria-label={`Notifications${nt.unread ? `, ${nt.unread} new` : ''}`} onClick={() => setSheet('notify')}>
-            <BellIcon />{nt.unread > 0 && <span className="badge">{nt.unread > 9 ? '9+' : nt.unread}</span>}
+          <button className="title-btn" aria-haspopup="menu" aria-expanded={menu === 'view'} onClick={() => setMenu(menu === 'view' ? null : 'view')}>
+            <h1>{titleFor(view === 'people' ? 'day' : view, date)}</h1>
+            <svg width="12" height="12" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M5.3 8.3a1 1 0 0 1 1.4 0L12 13.6l5.3-5.3a1 1 0 1 1 1.4 1.4l-6 6a1 1 0 0 1-1.4 0l-6-6a1 1 0 0 1 0-1.4z"/></svg>
+            {season && <span className="season-dot" title={season.label} />}
           </button>
-          <button className="avatar" aria-label="Profile and settings" onClick={() => setSheet('settings')}
-            style={p.avatar_url ? { backgroundImage: `url(${p.avatar_url})`, borderColor: p.colour } : { background: p.colour, borderColor: p.colour }}>
+          {!showsToday && <button className="today-pill" onClick={() => setDate(new Date())}>Today</button>}
+          <button className="plain-btn bell" aria-label={`Notifications${nt.unread ? `, ${nt.unread} new` : ''}`} onClick={() => setSheet('notify')}>
+            <BellIcon size={21} />{nt.unread > 0 && <span className="badge">{nt.unread > 9 ? '9+' : nt.unread}</span>}
+          </button>
+          <button className="avatar me" aria-label="Profile and settings" onClick={() => setSheet('settings')}
+            style={p.avatar_url ? { backgroundImage: `url(${p.avatar_url})` } : { background: p.colour }}>
             {!p.avatar_url && initials(p)}
           </button>
         </div>
-        <div className="seg" role="group" aria-label="View" style={{ justifySelf: 'start' }}>
-          {VIEWS.map(([v, label]) => <button key={v} aria-pressed={view === v} onClick={() => setView(v)}>{label}</button>)}
-        </div>
-        <div className="people-strip" role="group" aria-label="Whose events to show">
-          {f.friends.length > 0 && <button className="pchip add plans" onClick={() => openPlans()}>
-            <svg width="15" height="15" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M7 2v2H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2h-2V2h-2v2H9V2zm-2 7h14v11H5zm3 3v2h2v-2zm4 0v2h2v-2z"/></svg>
-            Plans{pendingInvites > 0 && <span className="badge">{pendingInvites}</span>}</button>}
+        {menu === 'view' && (
+          <>
+            <div className="menu-scrim" onClick={() => setMenu(null)} />
+            <div className="menu" role="menu">
+              {VIEWS.map(([v, label, hint]) => (
+                <button key={v} role="menuitemradio" aria-checked={view === v} onClick={() => { setView(v); setMenu(null) }}>
+                  <span>{label}<small>{hint}</small></span>{view === v && <i aria-hidden="true">✓</i>}
+                </button>
+              ))}
+              <button role="menuitem" className="menu-today" onClick={() => { setDate(new Date()); setMenu(null) }}>Go to today</button>
+              {season && <p className="menu-note"><span className="season-dot" /> {season.label}</p>}
+            </div>
+          </>
+        )}
+        <div className="people-row" role="group" aria-label="Whose events to show">
+          <button className="face" aria-pressed={!meHidden} onClick={() => f.toggleHidden(user.id)} title="You">
+            <Avatar person={p} size={30} />{fun && myBirthday && <span className="face-cake"><Cake size={11} /></span>}
+          </button>
+          {f.friends.map(({ person }) => (
+            <button key={person.id} className="face" aria-pressed={!f.hidden.includes(person.id)} onClick={() => f.toggleHidden(person.id)}
+              title={`${(person.display_name || person.username).split(/\s+/)[0]}${freeInfo(person.id).free ? ' · free now' : ''}`}>
+              <Avatar person={person} size={30} />{freeInfo(person.id).free && <i className="free-dot" />}{fun && birthdayToday(person.id) && <span className="face-cake"><Cake size={11} /></span>}
+            </button>
+          ))}
           {so.groups.map(g => {
             const others = f.friends.map(x => x.person.id).filter(id => !g.members.includes(id))
             const on = others.length > 0 && others.every(id => f.hidden.includes(id)) && g.members.every(id => !f.hidden.includes(id))
-            return <button key={g.id} className="pchip add group-chip" aria-pressed={on} onClick={() => f.showGroup(g.members)}>{g.name}</button>
+            return <button key={g.id} className="group-pill" aria-pressed={on} onClick={() => f.showGroup(g.members)}>{g.name}</button>
           })}
-          <button className="pchip" aria-pressed={!meHidden} onClick={() => f.toggleHidden(user.id)}><Avatar person={p} size={24} />You{fun && myBirthday && <Cake />}</button>
-          {f.friends.map(({ person }) => (
-            <button key={person.id} className="pchip" aria-pressed={!f.hidden.includes(person.id)} onClick={() => f.toggleHidden(person.id)}>
-              <span className="avatar-wrap"><Avatar person={person} size={24} />{freeInfo(person.id).free && <i className="free-dot" title="Free now" />}</span>{(person.display_name || person.username).split(/\s+/)[0]}{fun && birthdayToday(person.id) && <Cake />}
-            </button>
-          ))}
-          <button className="pchip add" onClick={openFriends}>
-            {f.friends.length ? 'Friends' : '+ Add friends'}{requests + unseen > 0 && <span className="badge">{requests + unseen}</span>}
-          </button>
+          {f.friends.length === 0 && <button className="group-pill" onClick={openFriends}>+ Add friends</button>}
         </div>
-        {countdowns.length > 0 && (
-          <div className="countdowns">
-            {countdowns.map(({ e, days }) => (
-              <button key={e.id} className="countdown" onClick={() => setEditing({ event: e })}>
-                <b>{days === 0 ? 'Today' : days}</b><span>{days === 0 ? '' : days === 1 ? 'day to' : 'days to'}</span><em>{e.title}</em>
-              </button>
-            ))}
-          </div>
-        )}
-        {liveBroadcasts.filter(b => !hiddenBc.includes(b.id)).slice(0, 2).map(b => (
-          <div key={b.id} className="bc-strip">
-            <BroadcastCard b={b} person={f.people[b.user_id]} replies={pl.replies.filter(r => r.broadcast_id === b.id)} uid={user.id} people={f.people} compact
-              onReply={v => pl.reply(b.id, v).catch(e => setToast(e.message))} />
-            <button className="x" aria-label="Hide" onClick={() => hideBc(b.id)}>×</button>
-          </div>
-        ))}
-        {soon.length > 0 && dismissed !== todayKey && (
-          <div className="banner" role="status">
-            <Cake />
-            <span>{soon.slice(0, 2).map((b, i) => {
-              const who = b.me ? 'your' : `${(b.person.display_name || b.person.username).split(/\s+/)[0]}'s`
-              const when = b.next.inDays === 0 ? 'today' : b.next.inDays === 1 ? 'tomorrow' : `on ${fmt(b.next.date, 'EEEE')}`
-              const txt = b.me && b.next.inDays === 0 ? <>Happy birthday, <b>{first(p)}</b>!</> : <>It's <b>{who}</b> birthday {when}</>
-              return <span key={b.id}>{i ? ' · ' : ''}{b.me || b.next.inDays !== 0 ? txt : <button className="linklike" style={{ font: 'inherit' }} onClick={() => setCard(b.person)}>{txt}</button>}</span>
-            })}{soon.length > 2 ? ` +${soon.length - 2} more` : ''}</span>
-            <button className="x" aria-label="Dismiss" onClick={dismissBanner}>×</button>
-          </div>
-        )}
+        {cards.length > 0 && <div className="cards">{cards}</div>}
       </header>
 
       <main className="main">
-        {view === 'people' &&
-          <TimeGrid columns={peopleCols} occurrences={occurrences} colourOf={colourOf} now={now} onEvent={openEvent} onSlot={openNew} onDay={openDay}
-            onPerson={person => (person.id === user.id ? setSheet('settings') : setCard(person))} hour={theme.config.density || 52} />}
-        {(view === 'day' || view === 'week') &&
-          <TimeGrid days={view === 'day' ? [range.from] : Array.from({ length: 7 }, (_, i) => addDays(range.from, i))}
-            occurrences={occurrences} colourOf={colourOf} now={now} onEvent={openEvent} onSlot={openNew} onDay={openDay} hour={theme.config.density || 52} />}
-        {view === 'month' &&
-          <MonthView date={date} range={range} occurrences={occurrences} colourOf={colourOf} now={now} onDay={openDay} onEvent={openEvent} />}
-        {view === 'agenda' &&
-          <AgendaView from={range.from} occurrences={occurrences} colourOf={colourOf} catMap={catMap} now={now} onEvent={openEvent} />}
+        <Swipe onSwipe={step} disabled={!!sheet || !!editing}>
+          {view === 'people' &&
+            <TimeGrid columns={peopleCols} occurrences={occurrences} colourOf={colourOf} now={now} onEvent={openEvent} onSlot={openNew} onDay={openDay}
+              onPerson={person => (person.id === user.id ? setSheet('settings') : setCard(person))} hour={theme.config.density || 52} />}
+          {(view === 'day' || view === 'week') &&
+            <TimeGrid days={view === 'day' ? [range.from] : Array.from({ length: 7 }, (_, i) => addDays(range.from, i))}
+              occurrences={occurrences} colourOf={colourOf} now={now} onEvent={openEvent} onSlot={openNew} onDay={openDay} hour={theme.config.density || 52} />}
+          {view === 'month' &&
+            <MonthView date={date} range={range} occurrences={occurrences} colourOf={colourOf} now={now} onDay={openDay} onEvent={openEvent} />}
+          {view === 'agenda' &&
+            <AgendaView from={range.from} occurrences={occurrences} colourOf={colourOf} catMap={catMap} now={now} onEvent={openEvent} />}
+        </Swipe>
       </main>
 
-      <button className="fab-smart" onClick={() => setSheet('smart')}>
-        <svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 2l1.9 5.6L19.5 9.5l-5.6 1.9L12 17l-1.9-5.6L4.5 9.5l5.6-1.9zM19 14l.9 2.6 2.6.9-2.6.9L19 21l-.9-2.6-2.6-.9 2.6-.9z"/></svg>
-        Smart add
-      </button>
-      <button className="fab" aria-label="New event" onClick={() => openNew()}>+</button>
+      {menu === 'add' && (
+        <>
+          <div className="menu-scrim" onClick={() => setMenu(null)} />
+          <div className="add-menu" role="menu">
+            <button role="menuitem" onClick={() => { setMenu(null); openNew() }}>
+              <span className="add-ic"><svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M7 2v2H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2h-2V2h-2v2H9V2zm-2 7h14v11H5z"/></svg></span>
+              <span><b>New event</b><small>Pick the time yourself</small></span>
+            </button>
+            <button role="menuitem" onClick={() => { setMenu(null); setSheet('smart') }}>
+              <span className="add-ic accent"><svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 2l1.9 5.6L19.5 9.5l-5.6 1.9L12 17l-1.9-5.6L4.5 9.5l5.6-1.9zM19 14l.9 2.6 2.6.9-2.6.9L19 21l-.9-2.6-2.6-.9 2.6-.9z"/></svg></span>
+              <span><b>Smart add</b><small>Type it, or snap a photo or screenshot</small></span>
+            </button>
+            {f.friends.length > 0 && <button role="menuitem" onClick={() => { setMenu(null); openPlans({ tab: 'find' }) }}>
+              <span className="add-ic"><svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8zm7 0a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM9 13c-3.3 0-7 1.6-7 4v2h14v-2c0-2.4-3.7-4-7-4zm7 0c-.5 0-1 0-1.6.1 1.6 1 2.6 2.3 2.6 3.9v2h5v-2c0-2.4-3.2-4-6-4z"/></svg></span>
+              <span><b>Plan with friends</b><small>Find a time everyone's free</small></span>
+            </button>}
+          </div>
+        </>
+      )}
+
+      <nav className="tabbar" aria-label="Main">
+        <button className="tab" aria-current={!sheet ? 'page' : undefined} onClick={() => { setSheet(null); setMenu(null) }}>
+          <svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M7 2v2H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2h-2V2h-2v2H9V2zm-2 7h14v11H5zm3 3v2h2v-2zm4 0v2h2v-2z"/></svg>
+          <span>Calendar</span>
+        </button>
+        <button className="tab" aria-current={sheet === 'plans' ? 'page' : undefined} onClick={() => openPlans()}>
+          <svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zm4.2 6.3-5.5 7a1 1 0 0 1-1.5.1l-3-3a1 1 0 1 1 1.4-1.4l2.2 2.2 4.8-6.1a1 1 0 0 1 1.6 1.2z"/></svg>
+          <span>Plans</span>{pendingInvites > 0 && <i className="tab-badge">{pendingInvites}</i>}
+        </button>
+        <button className="tab add" aria-label="Add" aria-expanded={menu === 'add'} onClick={() => setMenu(menu === 'add' ? null : 'add')}>
+          <svg width="26" height="26" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M11 5a1 1 0 1 1 2 0v6h6a1 1 0 1 1 0 2h-6v6a1 1 0 1 1-2 0v-6H5a1 1 0 1 1 0-2h6z"/></svg>
+        </button>
+        <button className="tab" aria-current={sheet === 'chat' ? 'page' : undefined} onClick={() => setSheet('chat')}>
+          <svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M4 3h16a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H8.4L4.7 21.3A1 1 0 0 1 3 20.6V5a1 1 0 0 1 1-2z"/></svg>
+          <span>Chat</span>{chatUnread > 0 && <i className="tab-badge">{chatUnread > 9 ? '9+' : chatUnread}</i>}
+        </button>
+        <button className="tab" aria-current={sheet === 'friends' ? 'page' : undefined} onClick={openFriends}>
+          <svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8zm7 0a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM9 13c-3.3 0-7 1.6-7 4v2h14v-2c0-2.4-3.7-4-7-4zm7 0c-.5 0-1 0-1.6.1 1.6 1 2.6 2.3 2.6 3.9v2h5v-2c0-2.4-3.2-4-6-4z"/></svg>
+          <span>Friends</span>{requests + unseen > 0 && <i className="tab-badge">{requests + unseen}</i>}
+        </button>
+      </nav>
       {!data.online && <div className="offline-pill">Offline · showing saved calendar</div>}
       {toast && <div className="toast" role="status">{toast}</div>}
 
-      {editing && <EventEditor data={data} {...editing} friends={f.friends.map(x => x.person)} groups={so.groups} plans={pl} onClose={msg => { setEditing(null); if (msg) setToast(msg) }} />}
+      {editing && <EventEditor data={data} {...editing} friends={f.friends.map(x => x.person)} groups={so.groups} plans={pl} onChat={id => startChatWith(() => ch.eventThread(id))} onClose={msg => { setEditing(null); if (msg) setToast(msg) }} />}
       {sheet === 'plans' && <PlansSheet uid={user.id} me={data} plans={pl} social={so} friendLinks={f.friends} plansWith={plansWith} onOpenPoll={id => setPollView({ id })} people={f.people} friends={f.friends.map(x => x.person)} busyMap={busyMap}
         initial={planInit} onPlan={startPlan} onClose={() => setSheet(null)} onOpenInvite={i => setInviteView(i)} />}
       {sheet === 'notify' && <NotificationsSheet n={nt} people={f.people} friends={f.friends.map(x => x.person)} onClose={() => setSheet(null)} onOpen={openUrl} />}
       {pollView && so.polls.find(q => q.id === pollView.id) && <PollSheet poll={so.polls.find(q => q.id === pollView.id)} social={so} uid={user.id} me={p} people={f.people} onDecide={decidePoll} onClose={() => setPollView(null)} />}
-      {inviteView && <InviteSheet invite={inviteView} plans={pl} people={f.people} me={p} onClose={() => setInviteView(null)} />}
+      {inviteView && <InviteSheet invite={inviteView} plans={pl} people={f.people} me={p} onClose={() => setInviteView(null)} onChat={() => startChatWith(() => ch.eventThread(inviteView.id))} />}
       {viewing && <FriendEventSheet occ={viewing} onClose={() => setViewing(null)} />}
       {sheet === 'settings' && <Settings data={data} bd={bd} onClose={() => setSheet(null)} onOpenCalendars={() => setSheet('calendars')} onOpenAppearance={() => setSheet('appearance')} />}
       {sheet === 'appearance' && <AppearanceSheet data={data} onClose={() => setSheet(null)} />}
       {bdayView && <BirthdaySheet occ={bdayView} onClose={() => setBdayView(null)}
         onPlan={bdayView.birthday.me ? null : () => openPlans({ tab: 'find', hide: [bdayView.birthday.id], with: f.friends.map(x => x.person.id).filter(id => id !== bdayView.birthday.id).slice(0, 4), title: `${bdayView.birthday.short}'s birthday`, window: 'eve', days: 14 })} />}
       {card && <FriendCard person={f.people[card.id] || card} birthday={bd.friends.find(b => b.user_id === card.id)} data={data} free={freeInfo(card.id)} social={so}
-        onFindTime={() => openPlans({ tab: 'find', with: [card.id] })}
+        onFindTime={() => openPlans({ tab: 'find', with: [card.id] })} onMessage={() => startChatWith(() => ch.startDm(card.id))}
         onClose={() => setCard(null)} onShowWeek={() => { f.showOnly(card.id); setCard(null); setSheet(null) }} />}
       {confetti && <Confetti colours={[p.colour, '#ffb020', '#ff5d8f', '#22c55e', '#7c3aed']} onDone={() => setConfetti(false)} />}
-      {sheet === 'smart' && <SmartAddSheet data={data} onClose={() => setSheet(null)} onDone={msg => { setSheet(null); setToast(msg) }} />}
+      {sheet === 'smart' && <SmartAddSheet data={data} initialText={smartText} onClose={() => { setSheet(null); setSmartText('') }} onDone={msg => { setSheet(null); setSmartText(''); setToast(msg) }} />}
+      {sheet === 'chat' && <ChatScreen chats={ch} uid={user.id} me={p} people={f.people} friends={f.friends.map(x => x.person)} initialId={chatOpen} upcoming={upcoming}
+        onClose={() => { setSheet(null); setChatOpen(null) }} onMakeEvent={t => { setSmartText(t); setSheet('smart') }} onOpenEvent={openEventRef} onToast={setToast} />}
       {sheet === 'calendars' && <CalendarsSheet data={data} cal={cal} onClose={() => setSheet(null)} />}
       {imported && <ImportedEventSheet occ={imported} source={cal.sources.find(s => s.id === imported.source_id)}
         category={catMap[imported.category_id]} onClose={() => setImported(null)} onOpenCalendars={() => { setImported(null); setSheet('calendars') }} />}

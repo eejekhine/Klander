@@ -7,7 +7,7 @@ import { nextBirthday } from '../lib/birthdays'
 import { DEFAULT_THEME, applyThemeConfig, getTheme, sanitize, themeName } from '../lib/themes'
 
 /** A friend's card: birthday, their theme, and "try their theme". */
-export default function FriendCard({ person, birthday, data, free, social, onClose, onShowWeek, onFindTime }) {
+export default function FriendCard({ person, birthday, data, free, social, onClose, onShowWeek, onFindTime, onMessage }) {
   const before = useRef(null)
   const [trying, setTrying] = useState(false)
   const [msg, setMsg] = useState('')
@@ -42,8 +42,11 @@ export default function FriendCard({ person, birthday, data, free, social, onClo
         {statusOn && <p className="status-note" style={{ margin: 0 }}>“{person.status_text}”{person.status_until ? <small className="muted"> · until {fmt(new Date(person.status_until), 'HH:mm')}</small> : null}</p>}
         {free && <p className="small" style={{ margin: 0 }}><i className={`free-dot inline${free.free ? '' : ' busy'}`} /> {free.free ? `Free now${free.until ? ` until ${fmt(free.until, 'HH:mm')}` : ''}` : `Busy until ${fmt(free.until, isSameDay(free.until, new Date()) ? 'HH:mm' : 'EEE HH:mm')}`}</p>}
         <div className="row">
-          <button className="btn primary grow" onClick={onFindTime}>Find a time</button>
-          <button className="btn grow" onClick={onShowWeek}>Only {first}'s week</button>
+          <button className="btn primary grow" onClick={onMessage}>Message</button>
+          <button className="btn grow" onClick={onFindTime}>Find a time</button>
+        </div>
+        <div className="row">
+          <button className="btn ghost grow" onClick={onShowWeek}>Only {first}'s week</button>
         </div>
       </div>
 

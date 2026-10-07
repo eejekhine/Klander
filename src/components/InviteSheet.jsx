@@ -5,7 +5,7 @@ import { fmt, timeLabel } from '../lib/dates'
 import { RSVP, statusLabel } from '../lib/plans'
 
 /** A plan a friend invited you to: details, who's going, and your answer. */
-export default function InviteSheet({ invite, plans, people, me, onClose }) {
+export default function InviteSheet({ invite, plans, people, me, onClose, onChat }) {
   const live = plans.invites.find(i => i.id === invite.id) || invite
   const host = people[live.owner_id]
   const [error, setError] = useState('')
@@ -29,6 +29,7 @@ export default function InviteSheet({ invite, plans, people, me, onClose }) {
           {RSVP.map(([v, l]) => <button key={v} style={{ flex: 1 }} aria-pressed={live.my_status === v} onClick={() => answer(v)}>{l}</button>)}
         </div>
         {live.my_status === 'going' && <p className="small muted" style={{ margin: 0 }}>It's on your calendar.</p>}
+        {onChat && live.my_status !== 'declined' && <button className="btn block" onClick={onChat}>Chat with everyone going</button>}
       </div>
       <div className="group">
         <h3>Guests</h3>

@@ -6,9 +6,9 @@ import { draftToEvent, prepareImage, readWithAI, repeatLabel } from '../lib/smar
 const EXAMPLES = ['basketball thurs 7pm at the edge', 'dinner with sam saturday 8 at nandos', 'dentist 14th nov 9:30']
 const VIS = [['friends', 'Friends'], ['busy', 'Busy only'], ['private', 'Private']]
 
-export default function SmartAddSheet({ data, onClose, onDone }) {
+export default function SmartAddSheet({ data, onClose, onDone, initialText = '' }) {
   const [stage, setStage] = useState('input') // input | reading | review
-  const [text, setText] = useState('')
+  const [text, setText] = useState(initialText)
   const [image, setImage] = useState(null)
   const [drafts, setDrafts] = useState([])
   const [message, setMessage] = useState('')

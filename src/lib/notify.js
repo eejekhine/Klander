@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { supabase } from './supabase'
 
 export const DEFAULT_SETTINGS = {
-  friend_events: true, plans: true, broadcasts: true, requests: true, reminders: true,
+  friend_events: true, plans: true, broadcasts: true, requests: true, reminders: true, chat: true,
   default_reminder: 30, quiet_start: null, quiet_end: null, muted: []
 }
 

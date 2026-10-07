@@ -17,7 +17,7 @@ const VIS = [
   ['private', 'Private', 'Only you can see it']
 ]
 
-export default function EventEditor({ data, event, occurrence, start, end, title: title0, invite = [], hide = [], friends = [], groups = [], plans, onClose }) {
+export default function EventEditor({ data, event, occurrence, start, end, title: title0, invite = [], hide = [], friends = [], groups = [], plans, onClose, onChat }) {
   const isNew = !event
   const s0 = event ? new Date(event.starts_at) : start
   const e0 = event ? new Date(event.ends_at) : end || addMinutes(start, 60)
@@ -184,6 +184,7 @@ export default function EventEditor({ data, event, occurrence, start, end, title
             })}
           </div>
           <p className="muted small" style={{ margin: 0 }}>Guests see the full details, even if it's busy-only, and can answer Going, Maybe or Can't.</p>
+          {event && guestRows.length > 0 && onChat && <button type="button" className="btn block" onClick={() => onChat(event.id)}>Chat with guests</button>}
           <details className="surprise" open={hiddenFrom.length > 0}>
             <summary>Keep it a surprise from…</summary>
             <div className="pick-row">

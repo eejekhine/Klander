@@ -409,3 +409,18 @@ create table public.poll_votes (option_id uuid not null references public.poll_o
 -- RLS: can_see_poll(p) = owner or invitee. Only the owner adds options/invitees (friends only).
 -- Invitees vote only for themselves, and only until the owner picks a time (decided_option).
 -- Triggers: notify_on_poll_invite -> invitee; notify_on_poll_vote -> owner (one per voter, held 2 min).
+
+-- ============================================================
+-- Phase 8: chat
+-- ============================================================
+-- conversations (kind dm | group | event; dm_key "a:b" makes each pair have one DM; event_id makes one chat per plan)
+-- conversation_members (last_read_at for unread counts + "Seen", muted)
+-- messages (text | image | event card | system; reply_to; soft delete via deleted_at; edits only to body)
+-- message_reactions (8 fixed emoji), blocks (owner only), reports (insert only, read in the dashboard)
+-- Storage bucket 'chat' (private, 5 MB, images only): path <conversation_id>/<uuid>.jpg, readable/uploadable by members only.
+-- RPCs (SECURITY DEFINER): start_dm(other) friends only, not blocked; create_group(title, members) friends only, max 30;
+--   event_thread(event) host + guests only; my_conversations() list with last message + unread count.
+-- RLS: is_member(conversation) gates everything. You can only send as yourself, never 'system' messages,
+--   and not into a DM with someone who blocked you (or you blocked). Anyone in a group can add their own friends.
+-- Trigger notify_on_message: one notification per chat per person, updated with a running count while unsent;
+--   respects muted chats, the 'chat' setting, muted friends and blocks.
