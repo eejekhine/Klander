@@ -12,9 +12,10 @@ export function useFriends(uid) {
   const [links, setLinks] = useState(cached.links || [])
   const [people, setPeople] = useState(cached.people || {})
   const [friendEvents, setFriendEvents] = useState(cached.friendEvents || [])
+  const [activity, setActivity] = useState(cached.activity || [])
   const [hidden, setHidden] = useState(() => { try { return JSON.parse(localStorage.getItem(hiddenKey(uid))) || [] } catch { return [] } })
 
-  useEffect(() => { writeCache(uid, { links, people, friendEvents }) }, [uid, links, people, friendEvents])
+  useEffect(() => { writeCache(uid, { links, people, friendEvents, activity }) }, [uid, links, people, friendEvents, activity])
   useEffect(() => { try { localStorage.setItem(hiddenKey(uid), JSON.stringify(hidden)) } catch { /* ignore */ } }, [uid, hidden])
 
   const refresh = useCallback(async () => {
@@ -26,11 +27,26 @@ export function useFriends(uid) {
       const { data } = await supabase.from('profiles').select('id, username, display_name, avatar_url, colour').in('id', others)
       profs = data || []
     }
-    const { data: evs } = await supabase.rpc('friend_events')
+    const [{ data: evs }, { data: acts }] = await Promise.all([
+      supabase.rpc('friend_events'),
+      supabase.from('activity').select('id, actor, verb, title, starts_at, created_at').order('created_at', { ascending: false }).limit(40)
+    ])
     setLinks(rows)
+    setActivity(acts || [])
     setPeople(Object.fromEntries(profs.map(p => [p.id, p])))
     setFriendEvents(evs || [])
   }, [uid])
+
+  // Live updates: friends' changes and friend requests arrive straight away
+  useEffect(() => {
+    let timer = null
+    const soon = () => { clearTimeout(timer); timer = setTimeout(refresh, 400) }
+    const channel = supabase.channel(`klander-live-${uid}`)
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'activity' }, soon)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'friendships' }, soon)
+      .subscribe()
+    return () => { clearTimeout(timer); supabase.removeChannel(channel) }
+  }, [uid, refresh])
 
   useEffect(() => {
     refresh()
@@ -75,7 +91,7 @@ export function useFriends(uid) {
   }
   const toggleHidden = id => setHidden(h => (h.includes(id) ? h.filter(x => x !== id) : [...h, id]))
 
-  return { friends, incoming, outgoing, people, friendEvents, hidden, toggleHidden, refresh, sendRequest, accept, remove, inviteCode, acceptInvite }
+  return { activity, friends, incoming, outgoing, people, friendEvents, hidden, toggleHidden, refresh, sendRequest, accept, remove, inviteCode, acceptInvite }
 }
 
 /* ---------- invite links: ?invite=CODE is remembered until the person is signed in ---------- */

@@ -1,6 +1,8 @@
 import { useState } from 'react'
 import Sheet from './Sheet'
 import { initials } from '../lib/colours'
+import { fmt } from '../lib/dates'
+import { ago } from '../lib/sync'
 
 const MESSAGES = {
   sent: name => `Request sent to @${name}.`,
@@ -69,6 +71,28 @@ export default function FriendsSheet({ f, onClose }) {
         <button className="btn block" onClick={share}>Share my invite link</button>
         {link && <input id="invite-link" className="input small" readOnly value={link} onFocus={e => e.target.select()} />}
       </div>
+
+      {f.friends.length > 0 && (
+        <div className="group">
+          <h3>Recent activity</h3>
+          {f.activity.length === 0 && <p className="small muted">Nothing yet. When friends add or change events you'll see it here.</p>}
+          {f.activity.slice(0, 15).map(a => {
+            const p = f.people[a.actor]
+            if (!p) return null
+            const name = (p.display_name || p.username).split(/\s+/)[0]
+            const what = a.verb === 'synced' ? 'updated their linked calendar'
+              : a.verb === 'removed' ? 'removed an event'
+              : `${a.verb} ${a.title ? `"${a.title}"` : 'a busy block'}${a.starts_at ? ` · ${fmt(new Date(a.starts_at), 'EEE d MMM, HH:mm')}` : ''}`
+            return (
+              <div key={a.id} className="person-row">
+                <Avatar person={p} size={30} />
+                <div className="who"><span className="small"><b>{name}</b> {what}</span><small>{ago(a.created_at)}</small></div>
+                <span />
+              </div>
+            )
+          })}
+        </div>
+      )}
 
       {f.incoming.length > 0 && (
         <div className="group">

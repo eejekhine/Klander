@@ -4,7 +4,7 @@ import { supabase } from '../lib/supabase'
 import { PALETTE, initials } from '../lib/colours'
 import { applyTheme } from '../lib/theme'
 
-export default function Settings({ data, onClose }) {
+export default function Settings({ data, onClose, onOpenCalendars }) {
   const p = data.profile
   const [displayName, setDisplayName] = useState(p.display_name || '')
   const [username, setUsername] = useState(p.username || '')
@@ -71,6 +71,12 @@ export default function Settings({ data, onClose }) {
           {[['system', 'Match phone'], ['light', 'Light'], ['dark', 'Dark']].map(([t, l]) =>
             <button key={t} style={{ flex: 1 }} aria-pressed={p.theme === t} onClick={() => setTheme(t)}>{l}</button>)}
         </div>
+      </div>
+
+      <div className="group">
+        <h3>Calendars</h3>
+        <p className="small muted">Bring in your uni timetable, Google, Outlook or iCloud calendars, and get a link to see Klander in those apps.</p>
+        <button className="btn block" onClick={onOpenCalendars}>Linked calendars and sync</button>
       </div>
 
       <Categories data={data} />

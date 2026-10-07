@@ -10,6 +10,9 @@ import EventEditor from './components/EventEditor'
 import Settings from './components/Settings'
 import FriendsSheet, { Avatar } from './components/FriendsSheet'
 import FriendEventSheet from './components/FriendEventSheet'
+import CalendarsSheet from './components/CalendarsSheet'
+import ImportedEventSheet from './components/ImportedEventSheet'
+import { useCalendarSources } from './lib/sync'
 
 const VIEWS = [['day', 'Day'], ['week', 'Week'], ['month', 'Month'], ['agenda', 'List']]
 const readView = () => { try { return localStorage.getItem('klander:view') || 'week' } catch { return 'week' } }
@@ -23,6 +26,16 @@ export default function CalendarApp({ data, user }) {
   const [now, setNow] = useState(() => new Date())
   const [toast, setToast] = useState('')
   const f = useFriends(user.id)
+  const cal = useCalendarSources(user.id, data.refresh)
+  const [imported, setImported] = useState(null)
+  const seenKey = `klander:seen:${user.id}`
+  const [seenAt, setSeenAt] = useState(() => { try { return localStorage.getItem(seenKey) || '' } catch { return '' } })
+  const unseen = f.activity.filter(a => a.created_at > seenAt && f.people[a.actor]).length
+  const openFriends = () => {
+    setSheet('friends')
+    const t = new Date().toISOString(); setSeenAt(t)
+    try { localStorage.setItem(seenKey, t) } catch { /* ignore */ }
+  }
 
   useEffect(() => { try { localStorage.setItem('klander:view', view) } catch { /* ignore */ } }, [view])
   useEffect(() => { const t = setInterval(() => setNow(new Date()), 60000); return () => clearInterval(t) }, [])
@@ -60,7 +73,9 @@ export default function CalendarApp({ data, user }) {
   const openNew = start => setEditing({ start: start || defaultStart(date) })
   const openEvent = occ => (occ.friend
     ? setViewing(occ)
-    : setEditing({ event: data.events.find(e => e.id === occ.id), occurrence: occ.occurrence || null }))
+    : occ.source_id
+      ? setImported(occ)
+      : setEditing({ event: data.events.find(e => e.id === occ.id), occurrence: occ.occurrence || null }))
   const openDay = d => { setDate(d); setView('day') }
 
   const p = data.profile
@@ -88,8 +103,8 @@ export default function CalendarApp({ data, user }) {
               <Avatar person={person} size={24} />{(person.display_name || person.username).split(/\s+/)[0]}
             </button>
           ))}
-          <button className="pchip add" onClick={() => setSheet('friends')}>
-            {f.friends.length ? 'Friends' : '+ Add friends'}{requests > 0 && <span className="badge">{requests}</span>}
+          <button className="pchip add" onClick={openFriends}>
+            {f.friends.length ? 'Friends' : '+ Add friends'}{requests + unseen > 0 && <span className="badge">{requests + unseen}</span>}
           </button>
         </div>
       </header>
@@ -110,7 +125,10 @@ export default function CalendarApp({ data, user }) {
 
       {editing && <EventEditor data={data} {...editing} onClose={() => setEditing(null)} />}
       {viewing && <FriendEventSheet occ={viewing} onClose={() => setViewing(null)} />}
-      {sheet === 'settings' && <Settings data={data} onClose={() => setSheet(null)} />}
+      {sheet === 'settings' && <Settings data={data} onClose={() => setSheet(null)} onOpenCalendars={() => setSheet('calendars')} />}
+      {sheet === 'calendars' && <CalendarsSheet data={data} cal={cal} onClose={() => setSheet(null)} />}
+      {imported && <ImportedEventSheet occ={imported} source={cal.sources.find(s => s.id === imported.source_id)}
+        category={catMap[imported.category_id]} onClose={() => setImported(null)} onOpenCalendars={() => { setImported(null); setSheet('calendars') }} />}
       {sheet === 'friends' && <FriendsSheet f={f} onClose={() => setSheet(null)} />}
     </div>
   )
