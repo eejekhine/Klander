@@ -392,3 +392,23 @@ input[type="date"].input, input[type="time"].input { -webkit-appearance: none; a
 .bc-strip .x { background: none; border: 0; color: var(--muted); font-size: 18px; padding: 0 6px; }
 .status-note { font-style: italic; }
 .seg .badge { margin-left: 4px; }
+
+/* ---------- phase 10: notifications ---------- */
+.icon-btn.bell { position: relative; color: var(--ink); }
+.icon-btn.bell .badge { position: absolute; top: -5px; right: -6px; margin: 0; min-width: 18px; line-height: 18px; padding: 0 5px; text-align: center; }
+.note-row { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 10px; align-items: center; background: none; border: 0; padding: 6px 4px; text-align: left; color: inherit; font: inherit; width: 100%; border-radius: 10px; cursor: pointer; }
+.note-row > span { display: grid; min-width: 0; }
+.note-row > span b { font-size: 14px; font-weight: 600; }
+.note-row > span small { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.note-row > small { font-size: 11.5px; white-space: nowrap; }
+.note-row.unread { background: color-mix(in srgb, var(--accent) 8%, transparent); }
+.note-row.unread > span b::before { content: ''; display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--accent); margin-right: 6px; vertical-align: 1px; }
+.note-icon { width: 32px; height: 32px; border-radius: 50%; display: grid; place-items: center; background: var(--surface-2); color: var(--muted); }
+.steps { margin: 0; padding-left: 20px; display: grid; gap: 4px; font-size: 14px; }
+@media (max-width: 440px) {
+  .topbar-row { gap: 6px; }
+  .topbar-row h1 { font-size: calc(18px * var(--title-scale)); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
+  .topbar-row .icon-btn { width: 34px; height: 34px; }
+  .topbar-row .btn { padding: 7px 10px !important; }
+  .topbar-row .avatar { flex-shrink: 0; }
+}

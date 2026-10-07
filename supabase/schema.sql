@@ -317,3 +317,55 @@ create policy "Remove own reply" on public.broadcast_replies for delete to authe
 alter table public.profiles add column status_text text check (char_length(status_text) <= 60);
 alter table public.profiles add column status_until timestamptz;
 -- alter publication supabase_realtime add table public.event_invites, public.broadcasts, public.broadcast_replies;
+
+-- ============================================================
+-- Phase 10 (part 1): push notifications
+-- ============================================================
+-- app_secret(n) / set_app_secret(n, v): service_role only. The push function creates its VAPID key pair
+-- on first run and keeps it in private.app_secrets (vapid_public, vapid_private), so the private key never
+-- leaves the server. vapid_public_key() returns the public half to signed-in users.
+
+create table public.push_subscriptions (           -- one row per phone/browser that allowed notifications
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null default auth.uid() references public.profiles(id) on delete cascade,
+  endpoint text not null unique check (endpoint like 'https://%'),
+  p256dh text not null, auth text not null, device text,
+  created_at timestamptz not null default now(), last_ok_at timestamptz
+);                                                  -- RLS: owner only
+
+create table public.notify_settings (               -- RLS: owner only
+  user_id uuid primary key default auth.uid() references public.profiles(id) on delete cascade,
+  friend_events boolean not null default true, plans boolean not null default true,
+  broadcasts boolean not null default true, requests boolean not null default true,
+  reminders boolean not null default true,
+  default_reminder int,                             -- minutes before; null = off
+  quiet_start time, quiet_end time,                 -- friend alerts held during these hours
+  muted uuid[] not null default '{}',
+  updated_at timestamptz not null default now()
+);
+
+alter table public.events add column remind_minutes int;  -- null = use default, -1 = none
+
+create table public.notifications (                 -- inbox + push queue
+  id bigint generated always as identity primary key,
+  user_id uuid not null references public.profiles(id) on delete cascade,
+  kind text not null check (kind in ('friend_event','invite','rsvp','broadcast','broadcast_reply','request','accepted','reminder','test')),
+  actor uuid references public.profiles(id) on delete cascade,
+  title text not null, body text, url text, ref text,
+  count int not null default 1,
+  created_at timestamptz not null default now(),
+  send_after timestamptz not null default now(),    -- friend_event waits 3 min so changes are batched
+  sent_at timestamptz, pushed boolean, read_at timestamptz
+);
+-- RLS: owner can read and delete; can only UPDATE read_at (column grant). Rows are only written by triggers.
+-- unique (user_id, ref) where kind = 'reminder'  -> each reminder fires once
+
+-- Triggers (SECURITY DEFINER, in schema private), all respecting notify_settings + muted friends:
+--   notify_on_activity        friend added/changed an event -> each friend (batched per friend for 3 minutes)
+--   notify_on_invite          invite -> guest; Going/Maybe/Can't -> host
+--   notify_on_broadcast       "up for something" -> each friend
+--   notify_on_broadcast_reply "I'm in" -> poster
+--   notify_on_friendship      request -> addressee; accepted -> requester
+-- cron 'klander-push' every minute: private.run_push() -> Edge Function push
+--   makes due reminders (rrule-aware, time-zone safe), sends Web Push with VAPID, skips quiet hours,
+--   drops dead subscriptions (404/410), deletes notifications older than 30 days.

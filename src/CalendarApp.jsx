@@ -26,6 +26,8 @@ import { fmt } from './lib/dates'
 import PlansSheet, { BroadcastCard } from './components/PlansSheet'
 import InviteSheet from './components/InviteSheet'
 import { usePlans } from './lib/plans'
+import { useNotifications } from './lib/notify'
+import NotificationsSheet, { BellIcon } from './components/NotificationsSheet'
 import { buildBusyMap, freeNow } from './lib/freetime'
 
 const VIEWS = [['day', 'Day'], ['week', 'Week'], ['month', 'Month'], ['agenda', 'List']]
@@ -42,6 +44,7 @@ export default function CalendarApp({ data, user }) {
   const f = useFriends(user.id)
   const bd = useBirthdays(user.id)
   const pl = usePlans(user.id)
+  const nt = useNotifications(user.id)
   const [planInit, setPlanInit] = useState({})
   const [inviteView, setInviteView] = useState(null)
   const openPlans = (init = {}) => { setPlanInit(init); setCard(null); setBdayView(null); setSheet('plans') }
@@ -148,6 +151,28 @@ export default function CalendarApp({ data, user }) {
       : setEditing({ event: data.events.find(e => e.id === occ.id), occurrence: occ.occurrence || null }))
   const openDay = d => { setDate(d); setView('day') }
 
+  // Tapping a notification opens the right place (?open=plans | up | friends | activity | event:<id>)
+  const openUrl = url => {
+    let open = null
+    try { open = new URL(url, window.location.origin).searchParams.get('open') } catch { /* ignore */ }
+    setSheet(null)
+    if (open === 'plans') openPlans()
+    else if (open === 'up') openPlans({ tab: 'up' })
+    else if (open === 'friends' || open === 'activity') openFriends()
+    else if (open?.startsWith('event:')) {
+      const ev = data.events.find(e => e.id === open.slice(6))
+      if (ev) { setDate(new Date(ev.starts_at)); setEditing({ event: ev }) }
+    }
+  }
+  useEffect(() => {
+    const q = new URLSearchParams(window.location.search)
+    if (q.get('open')) { const u = window.location.href; window.history.replaceState(null, '', '/'); setTimeout(() => openUrl(u), 300) }
+    const onMsg = e => { if (e.data?.type === 'klander-open') openUrl(e.data.url) }
+    navigator.serviceWorker?.addEventListener('message', onMsg)
+    return () => navigator.serviceWorker?.removeEventListener('message', onMsg)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   const p = data.profile
   const requests = f.incoming.length
   return (
@@ -159,6 +184,9 @@ export default function CalendarApp({ data, user }) {
           <button className="btn" style={{ padding: '8px 12px' }} onClick={() => setDate(new Date())}>Today</button>
           <button className="icon-btn" aria-label="Previous" onClick={() => step(-1)}>‹</button>
           <button className="icon-btn" aria-label="Next" onClick={() => step(1)}>›</button>
+          <button className="icon-btn bell" aria-label={`Notifications${nt.unread ? `, ${nt.unread} new` : ''}`} onClick={() => setSheet('notify')}>
+            <BellIcon />{nt.unread > 0 && <span className="badge">{nt.unread > 9 ? '9+' : nt.unread}</span>}
+          </button>
           <button className="avatar" aria-label="Profile and settings" onClick={() => setSheet('settings')}
             style={p.avatar_url ? { backgroundImage: `url(${p.avatar_url})`, borderColor: p.colour } : { background: p.colour, borderColor: p.colour }}>
             {!p.avatar_url && initials(p)}
@@ -223,6 +251,7 @@ export default function CalendarApp({ data, user }) {
       {editing && <EventEditor data={data} {...editing} friends={f.friends.map(x => x.person)} plans={pl} onClose={msg => { setEditing(null); if (msg) setToast(msg) }} />}
       {sheet === 'plans' && <PlansSheet uid={user.id} me={data} plans={pl} people={f.people} friends={f.friends.map(x => x.person)} busyMap={busyMap}
         initial={planInit} onPlan={startPlan} onClose={() => setSheet(null)} onOpenInvite={i => setInviteView(i)} />}
+      {sheet === 'notify' && <NotificationsSheet n={nt} people={f.people} friends={f.friends.map(x => x.person)} onClose={() => setSheet(null)} onOpen={openUrl} />}
       {inviteView && <InviteSheet invite={inviteView} plans={pl} people={f.people} me={p} onClose={() => setInviteView(null)} />}
       {viewing && <FriendEventSheet occ={viewing} onClose={() => setViewing(null)} />}
       {sheet === 'settings' && <Settings data={data} bd={bd} onClose={() => setSheet(null)} onOpenCalendars={() => setSheet('calendars')} onOpenAppearance={() => setSheet('appearance')} />}

@@ -3,6 +3,7 @@ import { addDays, addMinutes, differenceInMinutes, format, parse } from 'date-fn
 import Sheet from './Sheet'
 import { Avatar } from './FriendsSheet'
 import { statusLabel } from '../lib/plans'
+import { REMINDERS } from '../lib/notify'
 import { REPEATS, buildRRule, fmt, parseRRule, startOfDay } from '../lib/dates'
 
 const D = d => format(d, 'yyyy-MM-dd')
@@ -38,6 +39,7 @@ export default function EventEditor({ data, event, occurrence, start, end, title
   const [visibility, setVisibility] = useState(event?.visibility || 'friends')
   const [location, setLocation] = useState(event?.location || '')
   const [notes, setNotes] = useState(event?.notes || '')
+  const [remind, setRemind] = useState(event?.remind_minutes ?? 'default')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [confirmDelete, setConfirmDelete] = useState(false)
@@ -71,7 +73,7 @@ export default function EventEditor({ data, event, occurrence, start, end, title
       const row = await data.saveEvent({
         id: event?.id, title, all_day: allDay, starts_at: s.toISOString(), ends_at: e.toISOString(),
         rrule, exdates: event?.exdates || [], category_id: categoryId || null, visibility, location: location.trim(), notes: notes.trim(),
-        hidden_from: hiddenFrom
+        hidden_from: hiddenFrom, remind_minutes: remind === 'default' ? null : remind
       })
       if (plans && (invitees.length || guestRows.length)) await plans.setInvitees(row.id, invitees)
       onClose(invitees.length && isNew ? `Invites sent to ${invitees.length} ${invitees.length === 1 ? 'friend' : 'friends'}.` : '')
@@ -119,6 +121,15 @@ export default function EventEditor({ data, event, occurrence, start, end, title
         {repeat !== 'none' && (
           <label className="field"><span>Repeat until (optional)</span>
             <input id="ev-until" className="input" type="date" value={until} min={sDate} onChange={e => setUntil(e.target.value)} />
+          </label>
+        )}
+        {!allDay && (
+          <label className="field"><span>Reminder</span>
+            <select id="ev-remind" className="input" value={remind === null ? 'default' : String(remind)} onChange={e => setRemind(e.target.value === 'default' ? 'default' : +e.target.value)}>
+              <option value="default">Use my default</option>
+              <option value="-1">No reminder</option>
+              {REMINDERS.filter(([v]) => v !== null).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+            </select>
           </label>
         )}
         {repeating && occurrence && <p className="muted small">Changes here apply to every repeat of this event.</p>}
