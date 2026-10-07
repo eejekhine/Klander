@@ -1,11 +1,11 @@
 import { useEffect, useRef } from 'react'
 import { differenceInMinutes } from 'date-fns'
+import { evVars } from '../lib/themes'
 import { allDayOn, fmt, isSameDay, layoutDay, startOfDay, timeLabel } from '../lib/dates'
 
-const HOUR = 52
 const GUTTER = 44
 
-export default function TimeGrid({ days, occurrences, colourOf, now, onEvent, onSlot, onDay }) {
+export default function TimeGrid({ days, occurrences, colourOf, now, onEvent, onSlot, onDay, hour: HOUR = 52 }) {
   const scrollRef = useRef(null)
   const cols = `${GUTTER}px repeat(${days.length}, minmax(0, 1fr))`
   const single = days.length === 1
@@ -19,7 +19,7 @@ export default function TimeGrid({ days, occurrences, colourOf, now, onEvent, on
     const h = showsToday ? Math.max(0, new Date().getHours() - 2) : 7
     el.scrollTop = h * HOUR
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [firstDay, days.length])
+  }, [firstDay, days.length, HOUR])
 
   const hasAllDay = days.some(d => allDayOn(occurrences, d).length)
 
@@ -48,7 +48,7 @@ export default function TimeGrid({ days, occurrences, colourOf, now, onEvent, on
           {days.map(d => (
             <div key={d.getTime()} className="cell">
               {allDayOn(occurrences, d).map(o =>
-                <button key={o.key} className={chipClass(o)} style={{ '--c': colourOf(o) }} onClick={() => onEvent(o)}>{o.friend ? `${first(o.friend)}: ` : ''}{o.title}</button>)}
+                <button key={o.key} className={chipClass(o)} style={evVars(colourOf(o))} onClick={() => onEvent(o)}>{o.birthday && <Cake />}{o.birthday && !single ? o.birthday.short : <>{o.friend ? `${first(o.friend)}: ` : ''}{o.title}</>}</button>)}
             </div>
           ))}
         </div>
@@ -69,7 +69,7 @@ export default function TimeGrid({ days, occurrences, colourOf, now, onEvent, on
                   const h = (bottom - top) / 60 * HOUR
                   return (
                     <button key={ev.key} className={`ev${ev.friend ? ' friend' : ''}${ev.friend && ev.visibility === 'busy' ? ' busy' : ''}`} onClick={() => onEvent(ev)}
-                      style={{ '--c': colourOf(ev), top: top / 60 * HOUR + 1, height: h - 2, left: `calc(${col / n * 100}% + 2px)`, width: `calc(${100 / n}% - 4px)` }}>
+                      style={{ ...evVars(colourOf(ev)), top: top / 60 * HOUR + 1, height: h - 2, left: `calc(${col / n * 100}% + 2px)`, width: `calc(${100 / n}% - 4px)` }}>
                       <b>{ev.friend && <span className="who-tag">{first(ev.friend)} </span>}{ev.title}</b>
                       {h > 34 && <small>{timeLabel(ev)}</small>}
                       {h > 52 && ev.location && <small>{ev.location}</small>}
@@ -87,4 +87,12 @@ export default function TimeGrid({ days, occurrences, colourOf, now, onEvent, on
 }
 
 export const first = p => (p.display_name || p.username || '').split(/\s+/)[0]
-export const chipClass = o => `chip${o.friend ? ' friend' : ''}${o.friend && o.visibility === 'busy' ? ' busy' : ''}`
+export const chipClass = o => `chip${o.birthday ? ' bday' : ''}${o.friend ? ' friend' : ''}${o.friend && o.visibility === 'busy' ? ' busy' : ''}`
+export const Cake = ({ size = 13 }) => (
+  <svg className="cake" width={size} height={size} viewBox="0 0 24 24" aria-hidden="true">
+    <ellipse cx="12" cy="3.6" rx="1.9" ry="2.6" fill="#ffb020" />
+    <rect x="10.9" y="6.6" width="2.2" height="4" rx=".6" fill="currentColor" opacity=".55" />
+    <rect x="5" y="10.4" width="14" height="5" rx="1.6" fill="currentColor" opacity=".75" />
+    <rect x="2.5" y="15.2" width="19" height="7" rx="1.8" fill="currentColor" />
+  </svg>
+)

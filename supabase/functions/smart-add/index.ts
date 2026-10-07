@@ -49,6 +49,24 @@ const schema = {
   required: ['events']
 }
 
+const HEX = { type: 'STRING', description: 'Hex colour like #1a2b3c' }
+const themeSchema = {
+  type: 'OBJECT',
+  properties: {
+    name: { type: 'STRING', description: 'A short, fun name for the theme (2-3 words)' },
+    bg: HEX, surface: HEX, surface2: HEX, ink: HEX, muted: HEX, line: HEX, accent: HEX, now: HEX,
+    font: { type: 'INTEGER', description: '0 modern, 1 handwritten planner, 2 monospace studio, 3 tall sporty, 4 pixel arcade, 5 elegant serif, 6 very readable' },
+    style: { type: 'STRING', enum: ['filled', 'outline', 'solid', 'glow'] },
+    radius: { type: 'INTEGER', description: 'Corner roundness 0-16' }
+  },
+  required: ['name', 'bg', 'surface', 'surface2', 'ink', 'muted', 'line', 'accent', 'now', 'font', 'style', 'radius']
+}
+const THEME_RULES = `You design colour themes for a calendar app called Klander. Turn the user's vibe into a theme.
+- bg is the page background, surface is cards, surface2 is subtle panels, line is borders, ink is main text, muted is secondary text, accent is buttons and highlights, now is the current-time line.
+- Text must be easy to read: ink on bg needs strong contrast (at least 7:1), muted at least 4.5:1, accent at least 3:1 against bg.
+- Keep it tasteful and usable for daily use; avoid pure neon on pure white. Dark vibes (night, rain, space) should use a dark bg.
+- Pick the font and event style that best match the vibe. Glow suits neon/night; solid suits bold/sporty; outline suits minimal; filled suits most.`
+
 function instructions(now: string, tz: string) {
   return `You turn messages, posters, screenshots, tickets, timetables and rotas into calendar events for a UK user.
 Right now it is ${now} (time zone ${tz}). Dates are UK style (day before month).
@@ -62,7 +80,7 @@ Rules:
 - Never invent details that are not shown. If nothing looks like an event, return an empty list and explain in "message".`
 }
 
-async function askGemini(key: string, parts: unknown[]) {
+async function askGemini(key: string, parts: unknown[], responseSchema: unknown = schema) {
   let lastErr = ''
   for (const model of MODELS) {
     const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
@@ -70,7 +88,7 @@ async function askGemini(key: string, parts: unknown[]) {
       headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key },
       body: JSON.stringify({
         contents: [{ role: 'user', parts }],
-        generationConfig: { responseMimeType: 'application/json', responseSchema: schema, temperature: 0.1 }
+        generationConfig: { responseMimeType: 'application/json', responseSchema, temperature: responseSchema === schema ? 0.1 : 0.7 }
       }),
       signal: AbortSignal.timeout(45000)
     })
@@ -122,17 +140,30 @@ Deno.serve(async req => {
   const key = Deno.env.get('GEMINI_API_KEY')
   if (!key) return json({ error: "Smart add isn't switched on yet (no Gemini API key set in Supabase)." }, 503)
 
-  let body: { text?: string; image?: string; mime?: string; now?: string; tz?: string }
+  let body: { text?: string; image?: string; mime?: string; now?: string; tz?: string; mode?: string }
   try { body = await req.json() } catch { return json({ error: 'Bad request' }, 400) }
   const text = (body.text || '').trim().slice(0, 4000)
   const image = body.image || ''
-  if (!text && !image) return json({ error: 'Type something or add a photo.' }, 400)
+  if (!text && !image && body.mode !== 'theme') return json({ error: 'Type something or add a photo.' }, 400)
   if (image.length > 7_000_000) return json({ error: 'That image is too big. Try a screenshot or a smaller photo.' }, 413)
   const mime = ['image/jpeg', 'image/png', 'image/webp'].includes(body.mime || '') ? body.mime! : 'image/jpeg'
 
   const since = new Date(Date.now() - 864e5).toISOString()
   const { count } = await admin.from('ai_usage').select('id', { count: 'exact', head: true }).eq('user_id', user.id).gte('created_at', since)
   if ((count || 0) >= DAILY_LIMIT) return json({ error: `You've used all ${DAILY_LIMIT} smart adds for today. Try again tomorrow.` }, 429)
+
+  if (body.mode === 'theme') {
+    const vibe = (body.text || '').trim().slice(0, 200)
+    if (!vibe) return json({ error: 'Describe a vibe first.' }, 400)
+    try {
+      const t = await askGemini(key, [{ text: THEME_RULES }, { text: `Vibe: ${vibe}` }], themeSchema)
+      await admin.from('ai_usage').insert({ user_id: user.id, kind: 'theme', ok: true })
+      return json({ theme: t, remaining: Math.max(0, DAILY_LIMIT - (count || 0) - 1) })
+    } catch (e) {
+      await admin.from('ai_usage').insert({ user_id: user.id, kind: 'theme', ok: false })
+      return json({ error: e instanceof Error ? e.message : 'Something went wrong.' }, 502)
+    }
+  }
 
   const tz = /^[A-Za-z_]+\/[A-Za-z_]+$/.test(body.tz || '') ? body.tz! : 'Europe/London'
   const now = (body.now || new Date().toISOString()).slice(0, 60)

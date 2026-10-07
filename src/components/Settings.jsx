@@ -2,9 +2,11 @@ import { useRef, useState } from 'react'
 import Sheet from './Sheet'
 import { supabase } from '../lib/supabase'
 import { PALETTE, initials } from '../lib/colours'
-import { applyTheme } from '../lib/theme'
+import { themeName, useThemeState } from '../lib/themes'
+import BirthdayFields from './BirthdayFields'
 
-export default function Settings({ data, onClose, onOpenCalendars }) {
+export default function Settings({ data, bd, onClose, onOpenCalendars, onOpenAppearance }) {
+  const theme = useThemeState()
   const p = data.profile
   const [displayName, setDisplayName] = useState(p.display_name || '')
   const [username, setUsername] = useState(p.username || '')
@@ -30,11 +32,6 @@ export default function Settings({ data, onClose, onOpenCalendars }) {
     try { await data.uploadAvatar(f); setMsg('Photo updated') }
     catch (err) { setError(err.message) }
     finally { setBusy(false); e.target.value = '' }
-  }
-
-  const setTheme = async t => {
-    applyTheme(t)
-    try { await data.updateProfile({ theme: t }) } catch (err) { setError(err.message) }
   }
 
   const dirty = displayName !== (p.display_name || '') || username !== p.username || colour !== p.colour
@@ -66,11 +63,13 @@ export default function Settings({ data, onClose, onOpenCalendars }) {
       </div>
 
       <div className="group">
+        <h3>Birthday</h3>
+        <BirthdayFields bd={bd} />
+      </div>
+
+      <div className="group">
         <h3>Appearance</h3>
-        <div className="seg" role="group" aria-label="Theme" style={{ width: '100%' }}>
-          {[['system', 'Match phone'], ['light', 'Light'], ['dark', 'Dark']].map(([t, l]) =>
-            <button key={t} style={{ flex: 1 }} aria-pressed={p.theme === t} onClick={() => setTheme(t)}>{l}</button>)}
-        </div>
+        <button className="btn block" onClick={onOpenAppearance}>Themes and appearance · <b>{themeName(theme.config)}</b></button>
       </div>
 
       <div className="group">

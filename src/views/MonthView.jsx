@@ -1,6 +1,7 @@
 import { addDays, differenceInCalendarDays } from 'date-fns'
 import { eventsOn, fmt, isSameDay } from '../lib/dates'
-import { chipClass, first } from './TimeGrid'
+import { Cake, chipClass, first } from './TimeGrid'
+import { evVars } from '../lib/themes'
 
 const NAMES = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 
@@ -18,7 +19,7 @@ export default function MonthView({ date, range, occurrences, colourOf, now, onD
             <button key={d.getTime()} className={`mcell${other ? ' other' : ''}${isSameDay(d, now) ? ' today' : ''}`}
               onClick={() => onDay(d)} aria-label={`${fmt(d, 'EEEE d MMMM')}, ${list.length} events`}>
               <span className="dn">{fmt(d, 'd')}</span>
-              {list.slice(0, 3).map(o => <span key={o.key} className={chipClass(o)} style={{ '--c': colourOf(o) }}>{o.friend ? `${first(o.friend)}: ` : ''}{o.title}</span>)}
+              {list.slice(0, 3).map(o => <span key={o.key} className={chipClass(o)} style={evVars(colourOf(o))}>{o.birthday && <Cake size={11} />}{o.birthday ? o.birthday.short : <>{o.friend ? `${first(o.friend)}: ` : ''}{o.title}</>}</span>)}
               {list.length > 3 && <span className="more">+{list.length - 3} more</span>}
             </button>
           )

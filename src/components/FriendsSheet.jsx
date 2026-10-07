@@ -20,7 +20,7 @@ export function Avatar({ person, size = 38 }) {
   return <span className="avatar" style={style} aria-hidden="true">{!person?.avatar_url && initials(person)}</span>
 }
 
-export default function FriendsSheet({ f, onClose }) {
+export default function FriendsSheet({ f, onClose, onPerson }) {
   const [username, setUsername] = useState('')
   const [busy, setBusy] = useState(false)
   const [msg, setMsg] = useState('')
@@ -117,8 +117,10 @@ export default function FriendsSheet({ f, onClose }) {
           const shown = !f.hidden.includes(person.id)
           return (
             <div key={l.id} className="person-row">
-              <Avatar person={person} />
-              <div className="who"><b>{person.display_name || person.username}</b><small>@{person.username}</small></div>
+              <button className="person-open" onClick={() => onPerson?.(person)} aria-label={`Open ${person.display_name || person.username}`}>
+                <Avatar person={person} />
+                <div className="who"><b>{person.display_name || person.username}</b><small>@{person.username} · Birthday &amp; theme ›</small></div>
+              </button>
               {confirmRemove === l.id
                 ? <span className="row">
                     <button className="btn danger" style={{ padding: '7px 10px' }} onClick={() => act(async () => { await f.remove(l.id); setConfirmRemove(null) })}>Remove</button>

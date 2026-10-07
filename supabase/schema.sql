@@ -185,3 +185,37 @@ $$;
 -- avatars bucket: public read; users can only write inside a folder named after their own id
 -- alter publication supabase_realtime add table public.activity, public.friendships;
 -- select cron.schedule('klander-calendar-refresh', '7 */3 * * *', 'select private.run_calendar_refresh()');
+
+-- ============================================================
+-- Phase 6: themes & birthdays
+-- ============================================================
+-- Theme settings (cosmetic, fine for signed-in users to read so friends can "try your theme")
+alter table public.profiles add column theme_config jsonb not null default '{}'::jsonb;
+alter table public.profiles add constraint profiles_theme_config_size check (pg_column_size(theme_config) < 4000);
+
+-- Birthdays live in their own owner-only table (profiles are readable by every signed-in user)
+create table public.birthdays (
+  user_id uuid primary key references public.profiles(id) on delete cascade,
+  birthday date not null check (birthday > date '1900-01-01' and birthday <= current_date),
+  show_year boolean not null default false,
+  updated_at timestamptz not null default now()
+);
+alter table public.birthdays enable row level security;
+create policy "Users manage own birthday" on public.birthdays for all to authenticated
+  using ((select auth.uid()) = user_id) with check ((select auth.uid()) = user_id);
+
+-- Friends' birthdays: day + month always, year only if that friend chose to show it
+create or replace function public.friend_birthdays()
+returns table (user_id uuid, month int, day int, year int)
+language sql stable security definer set search_path = '' as $$
+  select b.user_id, extract(month from b.birthday)::int, extract(day from b.birthday)::int,
+         case when b.show_year then extract(year from b.birthday)::int end
+  from public.birthdays b
+  where public.is_friend(b.user_id);
+$$;
+revoke execute on function public.friend_birthdays() from public, anon;
+grant execute on function public.friend_birthdays() to authenticated;
+
+-- Smart add gains a "theme" mode
+alter table public.ai_usage drop constraint if exists ai_usage_kind_check;
+alter table public.ai_usage add constraint ai_usage_kind_check check (kind in ('text','photo','theme'));

@@ -9,11 +9,20 @@ import AgendaView from './views/AgendaView'
 import EventEditor from './components/EventEditor'
 import Settings from './components/Settings'
 import FriendsSheet, { Avatar } from './components/FriendsSheet'
+import { first } from './views/TimeGrid'
 import FriendEventSheet from './components/FriendEventSheet'
 import CalendarsSheet from './components/CalendarsSheet'
 import ImportedEventSheet from './components/ImportedEventSheet'
 import SmartAddSheet from './components/SmartAddSheet'
 import { useCalendarSources } from './lib/sync'
+import AppearanceSheet from './components/AppearanceSheet'
+import BirthdaySheet from './components/BirthdaySheet'
+import FriendCard from './components/FriendCard'
+import Confetti from './components/Confetti'
+import { Cake } from './views/TimeGrid'
+import { harmonize, seasonalFor, useThemeState } from './lib/themes'
+import { birthdayOccurrences, nextBirthday, useBirthdays } from './lib/birthdays'
+import { fmt } from './lib/dates'
 
 const VIEWS = [['day', 'Day'], ['week', 'Week'], ['month', 'Month'], ['agenda', 'List']]
 const readView = () => { try { return localStorage.getItem('klander:view') || 'week' } catch { return 'week' } }
@@ -27,6 +36,14 @@ export default function CalendarApp({ data, user }) {
   const [now, setNow] = useState(() => new Date())
   const [toast, setToast] = useState('')
   const f = useFriends(user.id)
+  const bd = useBirthdays(user.id)
+  const theme = useThemeState()
+  const fun = theme.config.fun !== false
+  const [bdayView, setBdayView] = useState(null)
+  const [card, setCard] = useState(null) // friend person
+  const todayKey = fmt(now, 'yyyy-MM-dd')
+  const [dismissed, setDismissed] = useState(() => { try { return localStorage.getItem('klander:bday-banner') || '' } catch { return '' } })
+  const [confetti, setConfetti] = useState(false)
   const cal = useCalendarSources(user.id, data.refresh)
   const [imported, setImported] = useState(null)
   const seenKey = `klander:seen:${user.id}`
@@ -62,17 +79,43 @@ export default function CalendarApp({ data, user }) {
     return expandEvents(visible, range.from, range.to).map(o => ({ ...o, friend: f.people[o.owner_id] }))
   }, [f.friendEvents, f.people, f.hidden, range])
   const meHidden = f.hidden.includes(user.id)
-  const occurrences = useMemo(
-    () => [...(meHidden ? [] : mine), ...theirs].sort((a, b) => a.start - b.start || b.end - a.end),
-    [mine, theirs, meHidden])
 
-  const colourOf = ev => (ev.friend ? ev.friend.colour : catMap[ev.category_id]?.colour || data.profile.colour)
+  // Birthdays: yours and your friends' (only day + month unless they share the year)
+  const bdayPeople = useMemo(() => {
+    const out = []
+    if (bd.mine?.birthday) {
+      const [y, m, d] = bd.mine.birthday.split('-').map(Number)
+      out.push({ id: user.id, person: data.profile, month: m, day: d, year: y, me: true })
+    }
+    for (const b of bd.friends) if (f.people[b.user_id]) out.push({ id: b.user_id, person: f.people[b.user_id], month: b.month, day: b.day, year: b.year || null })
+    return out
+  }, [bd.mine, bd.friends, f.people, data.profile, user.id])
+  const bdays = useMemo(() => birthdayOccurrences(bdayPeople.filter(b => !f.hidden.includes(b.id)), range.from, range.to), [bdayPeople, f.hidden, range])
+  const occurrences = useMemo(
+    () => [...bdays, ...(meHidden ? [] : mine), ...theirs].sort((a, b) => a.start - b.start || b.end - a.end),
+    [bdays, mine, theirs, meHidden])
+
+  const soon = useMemo(() => bdayPeople.map(b => ({ ...b, next: nextBirthday(b.month, b.day, now) })).filter(b => b.next.inDays <= 3).sort((a, b) => a.next.inDays - b.next.inDays), [bdayPeople, now])
+  const birthdayToday = id => soon.some(b => b.id === id && b.next.inDays === 0)
+  const myBirthday = birthdayToday(user.id)
+  const season = fun ? seasonalFor(now) : null
+  useEffect(() => {
+    if (!fun || !myBirthday) return
+    const k = `klander:confetti:${todayKey}`
+    try { if (localStorage.getItem(k)) return; localStorage.setItem(k, '1') } catch { /* ignore */ }
+    setConfetti(true)
+  }, [fun, myBirthday, todayKey])
+  const dismissBanner = () => { setDismissed(todayKey); try { localStorage.setItem('klander:bday-banner', todayKey) } catch { /* ignore */ } }
+
+  const colourOf = ev => harmonize(ev.birthday ? ev.birthday.person.colour : ev.friend ? ev.friend.colour : catMap[ev.category_id]?.colour || data.profile.colour)
 
   const step = dir => setDate(d =>
     view === 'day' ? addDays(d, dir) : view === 'week' ? addWeeks(d, dir) : view === 'month' ? addMonths(d, dir) : addDays(d, dir * 30))
 
   const openNew = start => setEditing({ start: start || defaultStart(date) })
-  const openEvent = occ => (occ.friend
+  const openEvent = occ => (occ.birthday
+    ? setBdayView(occ)
+    : occ.friend
     ? setViewing(occ)
     : occ.source_id
       ? setImported(occ)
@@ -82,10 +125,11 @@ export default function CalendarApp({ data, user }) {
   const p = data.profile
   const requests = f.incoming.length
   return (
-    <div className="app">
+    <div className={`app${season ? ' seasonal' : ''}`} style={season ? { '--season': season.colour } : undefined}>
       <header className="topbar">
         <div className="topbar-row">
           <h1>{titleFor(view, date)}</h1>
+          {season && <span className="season" title={season.label}>{season.label}</span>}
           <button className="btn" style={{ padding: '8px 12px' }} onClick={() => setDate(new Date())}>Today</button>
           <button className="icon-btn" aria-label="Previous" onClick={() => step(-1)}>‹</button>
           <button className="icon-btn" aria-label="Next" onClick={() => step(1)}>›</button>
@@ -98,22 +142,34 @@ export default function CalendarApp({ data, user }) {
           {VIEWS.map(([v, label]) => <button key={v} aria-pressed={view === v} onClick={() => setView(v)}>{label}</button>)}
         </div>
         <div className="people-strip" role="group" aria-label="Whose events to show">
-          <button className="pchip" aria-pressed={!meHidden} onClick={() => f.toggleHidden(user.id)}><Avatar person={p} size={24} />You</button>
+          <button className="pchip" aria-pressed={!meHidden} onClick={() => f.toggleHidden(user.id)}><Avatar person={p} size={24} />You{fun && myBirthday && <Cake />}</button>
           {f.friends.map(({ person }) => (
             <button key={person.id} className="pchip" aria-pressed={!f.hidden.includes(person.id)} onClick={() => f.toggleHidden(person.id)}>
-              <Avatar person={person} size={24} />{(person.display_name || person.username).split(/\s+/)[0]}
+              <Avatar person={person} size={24} />{(person.display_name || person.username).split(/\s+/)[0]}{fun && birthdayToday(person.id) && <Cake />}
             </button>
           ))}
           <button className="pchip add" onClick={openFriends}>
             {f.friends.length ? 'Friends' : '+ Add friends'}{requests + unseen > 0 && <span className="badge">{requests + unseen}</span>}
           </button>
         </div>
+        {soon.length > 0 && dismissed !== todayKey && (
+          <div className="banner" role="status">
+            <Cake />
+            <span>{soon.slice(0, 2).map((b, i) => {
+              const who = b.me ? 'your' : `${(b.person.display_name || b.person.username).split(/\s+/)[0]}'s`
+              const when = b.next.inDays === 0 ? 'today' : b.next.inDays === 1 ? 'tomorrow' : `on ${fmt(b.next.date, 'EEEE')}`
+              const txt = b.me && b.next.inDays === 0 ? <>Happy birthday, <b>{first(p)}</b>!</> : <>It's <b>{who}</b> birthday {when}</>
+              return <span key={b.id}>{i ? ' · ' : ''}{b.me || b.next.inDays !== 0 ? txt : <button className="linklike" style={{ font: 'inherit' }} onClick={() => setCard(b.person)}>{txt}</button>}</span>
+            })}{soon.length > 2 ? ` +${soon.length - 2} more` : ''}</span>
+            <button className="x" aria-label="Dismiss" onClick={dismissBanner}>×</button>
+          </div>
+        )}
       </header>
 
       <main className="main">
         {(view === 'day' || view === 'week') &&
           <TimeGrid days={view === 'day' ? [range.from] : Array.from({ length: 7 }, (_, i) => addDays(range.from, i))}
-            occurrences={occurrences} colourOf={colourOf} now={now} onEvent={openEvent} onSlot={openNew} onDay={openDay} />}
+            occurrences={occurrences} colourOf={colourOf} now={now} onEvent={openEvent} onSlot={openNew} onDay={openDay} hour={theme.config.density || 52} />}
         {view === 'month' &&
           <MonthView date={date} range={range} occurrences={occurrences} colourOf={colourOf} now={now} onDay={openDay} onEvent={openEvent} />}
         {view === 'agenda' &&
@@ -130,12 +186,17 @@ export default function CalendarApp({ data, user }) {
 
       {editing && <EventEditor data={data} {...editing} onClose={() => setEditing(null)} />}
       {viewing && <FriendEventSheet occ={viewing} onClose={() => setViewing(null)} />}
-      {sheet === 'settings' && <Settings data={data} onClose={() => setSheet(null)} onOpenCalendars={() => setSheet('calendars')} />}
+      {sheet === 'settings' && <Settings data={data} bd={bd} onClose={() => setSheet(null)} onOpenCalendars={() => setSheet('calendars')} onOpenAppearance={() => setSheet('appearance')} />}
+      {sheet === 'appearance' && <AppearanceSheet data={data} onClose={() => setSheet(null)} />}
+      {bdayView && <BirthdaySheet occ={bdayView} onClose={() => setBdayView(null)} />}
+      {card && <FriendCard person={f.people[card.id] || card} birthday={bd.friends.find(b => b.user_id === card.id)} data={data}
+        onClose={() => setCard(null)} onShowWeek={() => { f.showOnly(card.id); setCard(null); setSheet(null) }} />}
+      {confetti && <Confetti colours={[p.colour, '#ffb020', '#ff5d8f', '#22c55e', '#7c3aed']} onDone={() => setConfetti(false)} />}
       {sheet === 'smart' && <SmartAddSheet data={data} onClose={() => setSheet(null)} onDone={msg => { setSheet(null); setToast(msg) }} />}
       {sheet === 'calendars' && <CalendarsSheet data={data} cal={cal} onClose={() => setSheet(null)} />}
       {imported && <ImportedEventSheet occ={imported} source={cal.sources.find(s => s.id === imported.source_id)}
         category={catMap[imported.category_id]} onClose={() => setImported(null)} onOpenCalendars={() => { setImported(null); setSheet('calendars') }} />}
-      {sheet === 'friends' && <FriendsSheet f={f} onClose={() => setSheet(null)} />}
+      {sheet === 'friends' && <FriendsSheet f={f} onClose={() => setSheet(null)} onPerson={person => { setSheet(null); setCard(person) }} />}
     </div>
   )
 }

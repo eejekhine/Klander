@@ -73,3 +73,22 @@ export function repeatLabel(d) {
   const base = { daily: 'Every day', weekdays: 'Every weekday', weekly: 'Every week', fortnightly: 'Every 2 weeks', monthly: 'Every month', yearly: 'Every year' }[d.repeat]
   return `${base}${d.repeat === 'weekly' ? days : ''}${until}`
 }
+
+/** "Describe a vibe" -> a custom theme config (validated and contrast-checked by the theme engine). */
+export async function aiTheme(vibe) {
+  const { data, error } = await supabase.functions.invoke('smart-add', { body: { mode: 'theme', text: vibe } })
+  if (error) {
+    let msg = "Couldn't make that theme right now."
+    try { msg = (await error.context.json()).error || msg } catch { /* keep */ }
+    throw new Error(msg)
+  }
+  const t = data?.theme
+  if (!t || !/^#[0-9a-f]{6}$/i.test(t.bg || '')) throw new Error("The AI didn't send back a usable theme. Try describing it differently.")
+  return {
+    preset: 'custom', name: String(t.name || 'My vibe').slice(0, 40),
+    custom: { bg: t.bg, surface: t.surface, surface2: t.surface2, ink: t.ink, muted: t.muted, line: t.line, accent: t.accent, now: t.now },
+    font: Number.isInteger(t.font) && t.font >= 0 && t.font <= 6 ? t.font : 0,
+    style: ['filled', 'outline', 'solid', 'glow'].includes(t.style) ? t.style : 'filled',
+    radius: Number.isFinite(t.radius) ? Math.max(0, Math.min(16, Math.round(t.radius))) : 8
+  }
+}

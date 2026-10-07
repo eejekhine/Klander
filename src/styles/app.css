@@ -290,3 +290,66 @@ a.btn { text-decoration: none; }
 .two > * { min-width: 0; }
 .input { min-width: 0; }
 input[type="date"].input, input[type="time"].input { -webkit-appearance: none; appearance: none; min-height: 46px; }
+
+/* ---------- theme engine hooks ---------- */
+:root { --r: 7px; --zoom: 1; --pattern: none; --title-scale: 1; --title-track: -.01em; }
+.app { zoom: var(--zoom); }
+.topbar h1 { font-size: calc(19px * var(--title-scale)); letter-spacing: var(--title-track); }
+.wordmark { letter-spacing: var(--title-track); }
+.main { background: var(--pattern); }
+.ev { border-radius: var(--r); }
+.chip { border-radius: calc(var(--r) * .85); }
+.agenda-item { border-radius: calc(var(--r) + 5px); }
+.btn, .input, select.input, textarea.input, .icon-btn { border-radius: calc(var(--r) + 5px); }
+.fab { border-radius: calc(var(--r) + 11px); }
+.fab-smart { border-radius: calc(var(--r) * 3 + 6px); }
+
+/* Event styles */
+[data-evstyle="outline"] .ev, [data-evstyle="outline"] .chip { background: var(--surface); border: 1.5px solid var(--c); border-left-width: 4px; }
+[data-evstyle="solid"] .ev, [data-evstyle="solid"] .chip { background: var(--c); color: var(--oc); border-left: 0; }
+[data-evstyle="solid"] .ev small { color: var(--oc); opacity: .85; }
+[data-evstyle="solid"] .ev .who-tag { color: var(--oc); }
+[data-evstyle="glow"] .ev, [data-evstyle="glow"] .chip { background: color-mix(in srgb, var(--c) 14%, var(--bg)); border: 1px solid var(--c); box-shadow: 0 0 10px color-mix(in srgb, var(--c) 55%, transparent); }
+[data-evstyle] .ev.busy, [data-evstyle] .chip.busy { background: repeating-linear-gradient(135deg, color-mix(in srgb, var(--c) 18%, var(--surface)) 0 6px, var(--surface) 6px 12px); color: var(--ink); }
+
+/* Level-meter now line (Studio Desk) */
+[data-meter="1"] .nowline { height: 6px; background: repeating-linear-gradient(90deg, var(--now) 0 6px, transparent 6px 9px); }
+[data-meter="1"] .nowline::before { display: none; }
+
+/* High contrast */
+[data-hc="1"] .ev, [data-hc="1"] .chip, [data-hc="1"] .group, [data-hc="1"] .btn, [data-hc="1"] .input { border-width: 2px !important; }
+[data-hc="1"] .tg-col, [data-hc="1"] .mcell { border-color: var(--muted); }
+
+/* ---------- birthdays + seasonal ---------- */
+.chip.bday, .ev.bday { background: linear-gradient(90deg, color-mix(in srgb, var(--c) 30%, var(--surface)), color-mix(in srgb, var(--now) 22%, var(--surface))); border-left: 3px solid var(--c); color: var(--ink); font-weight: 600; }
+.cake { display: inline-block; width: 13px; height: 13px; vertical-align: -1px; margin-right: 3px; }
+.avatar-wrap { position: relative; display: inline-grid; }
+.avatar-wrap .cake-badge { position: absolute; right: -4px; top: -6px; width: 18px; height: 18px; border-radius: 50%; background: var(--surface); display: grid; place-items: center; box-shadow: 0 1px 3px rgba(0,0,0,.25); }
+.pchip .cake { margin: 0 0 0 2px; }
+.banner { margin: 0 16px; display: flex; align-items: center; gap: 10px; padding: 9px 12px; border-radius: calc(var(--r) + 5px);
+  background: color-mix(in srgb, var(--now) 14%, var(--surface)); border: 1px solid color-mix(in srgb, var(--now) 40%, transparent); font-size: 14px; }
+.banner b { font-weight: 700; }
+.banner .x { margin-left: auto; background: none; border: 0; color: var(--muted); font-size: 18px; padding: 0 4px; }
+.season { font-size: 12px; font-weight: 600; padding: 3px 9px; border-radius: 999px; color: #fff; background: var(--season); white-space: nowrap; }
+.app.seasonal .nowline { background: var(--season); box-shadow: 0 0 8px var(--season); }
+.app.seasonal .nowline::before { background: var(--season); }
+.confetti { position: fixed; inset: 0; pointer-events: none; z-index: 70; }
+
+/* ---------- appearance sheet ---------- */
+.theme-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 8px; }
+.theme-card { border: 1px solid var(--line); background: var(--surface); border-radius: calc(var(--r) + 5px); padding: 10px; text-align: left; display: grid; gap: 6px; font-size: 13px; }
+.theme-card[aria-pressed="true"] { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent); }
+.theme-card b { font-size: 14px; }
+.theme-card small { color: var(--muted); line-height: 1.3; }
+.swatch-row { display: flex; height: 18px; border-radius: 6px; overflow: hidden; border: 1px solid var(--line); }
+.swatch-row i { flex: 1; }
+.contrast-note { font-size: 12.5px; }
+.sheet-sticky { position: sticky; bottom: 0; background: var(--bg); padding-top: 8px; display: flex; gap: 8px; }
+.person-row .person-open { grid-column: 1 / 3; display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 12px; align-items: center; background: none; border: 0; padding: 0; text-align: left; color: inherit; font: inherit; min-width: 0; cursor: pointer; }
+.topbar-row .season { overflow: hidden; text-overflow: ellipsis; max-width: 40vw; }
+.bday-fields { display: grid; gap: 10px; }
+.cake { flex-shrink: 0; }
+.banner > .cake { width: 18px; height: 18px; color: var(--now); }
+.chip.bday .cake, .ev.bday .cake { color: var(--c); }
+.sheet-sticky { bottom: calc(-24px - var(--safe-bottom)); padding-bottom: calc(12px + var(--safe-bottom)); margin-bottom: calc(-12px - var(--safe-bottom)); box-shadow: 0 -8px 12px -8px rgba(0,0,0,.15); }
+.tg-allday .chip.bday { padding-inline: 3px; text-overflow: clip; letter-spacing: -.01em; }

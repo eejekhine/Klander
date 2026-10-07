@@ -1,13 +1,20 @@
 import { useEffect } from 'react'
 import { useKlanderData } from './lib/store'
-import { applyTheme } from './lib/theme'
+import { applyThemeConfig } from './lib/themes'
 import Onboarding from './components/Onboarding'
 import CalendarApp from './CalendarApp'
 
 export default function Shell({ user }) {
   const data = useKlanderData(user)
-  const theme = data.profile?.theme
-  useEffect(() => { if (theme) applyTheme(theme) }, [theme])
+  const mode = data.profile?.theme
+  const cfg = data.profile?.theme_config
+  const cfgKey = JSON.stringify(cfg || {})
+  useEffect(() => {
+    if (!data.profile) return
+    try { if (mode) localStorage.setItem('klander:theme', mode) } catch { /* ignore */ }
+    applyThemeConfig(cfg || {}, mode)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mode, cfgKey, !!data.profile])
 
   if (data.loading) return <div className="splash"><span className="wordmark">Klander<i>.</i></span></div>
   if (!data.profile) {

@@ -1,6 +1,8 @@
 import { addDays } from 'date-fns'
 import { startOfDay } from '../lib/dates'
 import { eventsOn, fmt, isSameDay, timeLabel } from '../lib/dates'
+import { evVars } from '../lib/themes'
+import { Cake } from './TimeGrid'
 
 export default function AgendaView({ from, occurrences, colourOf, catMap, now, onEvent }) {
   const days = Array.from({ length: 60 }, (_, i) => addDays(from, i))
@@ -14,10 +16,10 @@ export default function AgendaView({ from, occurrences, colourOf, catMap, now, o
           <div className={`agenda-date${isSameDay(d, now) ? ' today' : ''}`}><small>{fmt(d, 'EEE')}</small><b>{fmt(d, 'd')}</b><small>{fmt(d, 'MMM')}</small></div>
           <div className="agenda-list">
             {list.map(o => (
-              <button key={o.key} className="agenda-item" style={{ '--c': colourOf(o) }} onClick={() => onEvent(o)}>
+              <button key={o.key} className="agenda-item" style={evVars(colourOf(o))} onClick={() => onEvent(o)}>
                 <i />
-                <span><b>{o.friend && <span style={{ color: 'var(--c)' }}>{o.friend.display_name || o.friend.username} · </span>}{o.title}</b>
-                  <small>{!o.all_day && o.start < startOfDay(d) ? `Until ${fmt(o.end, 'HH:mm')}` : timeLabel(o)}{o.location ? ` · ${o.location}` : ''}{!o.friend && catMap[o.category_id] ? ` · ${catMap[o.category_id].name}` : ''}{o.rrule ? ' · repeats' : ''}</small>
+                <span><b>{o.birthday && <Cake />}{o.friend && <span style={{ color: 'var(--c)' }}>{o.friend.display_name || o.friend.username} · </span>}{o.title}</b>
+                  <small>{o.birthday ? (o.birthday.age ? `Turns ${o.birthday.age}` : 'Birthday') : !o.all_day && o.start < startOfDay(d) ? `Until ${fmt(o.end, 'HH:mm')}` : timeLabel(o)}{!o.birthday && o.location ? ` · ${o.location}` : ''}{!o.friend && catMap[o.category_id] ? ` · ${catMap[o.category_id].name}` : ''}{o.rrule ? ' · repeats' : ''}</small>
                 </span>
               </button>
             ))}

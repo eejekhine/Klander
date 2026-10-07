@@ -24,7 +24,7 @@ export function useFriends(uid) {
     const others = [...new Set(rows.map(r => (r.requester === uid ? r.addressee : r.requester)))]
     let profs = []
     if (others.length) {
-      const { data } = await supabase.from('profiles').select('id, username, display_name, avatar_url, colour').in('id', others)
+      const { data } = await supabase.from('profiles').select('id, username, display_name, avatar_url, colour, theme_config').in('id', others)
       profs = data || []
     }
     const [{ data: evs }, { data: acts }] = await Promise.all([
@@ -91,7 +91,13 @@ export function useFriends(uid) {
   }
   const toggleHidden = id => setHidden(h => (h.includes(id) ? h.filter(x => x !== id) : [...h, id]))
 
-  return { activity, friends, incoming, outgoing, people, friendEvents, hidden, toggleHidden, refresh, sendRequest, accept, remove, inviteCode, acceptInvite }
+  // Show just one person (everyone else hidden, including you); calling it again shows everyone.
+  const showOnly = id => setHidden(h => {
+    const all = [uid, ...friends.map(x => x.person.id)]
+    const already = all.every(x => x === id ? !h.includes(x) : h.includes(x))
+    return already ? [] : all.filter(x => x !== id)
+  })
+  return { activity, friends, incoming, outgoing, people, friendEvents, hidden, toggleHidden, showOnly, refresh, sendRequest, accept, remove, inviteCode, acceptInvite }
 }
 
 /* ---------- invite links: ?invite=CODE is remembered until the person is signed in ---------- */
