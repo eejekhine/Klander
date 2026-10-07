@@ -2,12 +2,12 @@ import { useRef, useState } from 'react'
 import Sheet from './Sheet'
 import { Avatar } from './FriendsSheet'
 import { Cake } from '../views/TimeGrid'
-import { fmt } from '../lib/dates'
+import { fmt, isSameDay } from '../lib/dates'
 import { nextBirthday } from '../lib/birthdays'
 import { DEFAULT_THEME, applyThemeConfig, getTheme, sanitize, themeName } from '../lib/themes'
 
 /** A friend's card: birthday, their theme, and "try their theme". */
-export default function FriendCard({ person, birthday, data, onClose, onShowWeek }) {
+export default function FriendCard({ person, birthday, data, free, onClose, onShowWeek, onFindTime }) {
   const before = useRef(null)
   const [trying, setTrying] = useState(false)
   const [msg, setMsg] = useState('')
@@ -15,6 +15,7 @@ export default function FriendCard({ person, birthday, data, onClose, onShowWeek
   const theirs = person.theme_config && Object.keys(person.theme_config).length ? { ...DEFAULT_THEME, ...person.theme_config } : null
   const next = birthday ? nextBirthday(birthday.month, birthday.day) : null
   const first = (person.display_name || person.username).split(/\s+/)[0]
+  const statusOn = person.status_text && (!person.status_until || new Date(person.status_until) > new Date())
 
   const tryIt = () => {
     before.current = getTheme()
@@ -38,7 +39,12 @@ export default function FriendCard({ person, birthday, data, onClose, onShowWeek
           <span className="avatar-wrap"><Avatar person={person} size={52} />{next?.inDays === 0 && <span className="cake-badge"><Cake size={12} /></span>}</span>
           <div className="who"><b style={{ fontSize: 18 }}>{person.display_name || person.username}</b><small>@{person.username}</small></div>
         </div>
-        <button className="btn block" onClick={onShowWeek}>See only {first}'s week</button>
+        {statusOn && <p className="status-note" style={{ margin: 0 }}>“{person.status_text}”{person.status_until ? <small className="muted"> · until {fmt(new Date(person.status_until), 'HH:mm')}</small> : null}</p>}
+        {free && <p className="small" style={{ margin: 0 }}><i className={`free-dot inline${free.free ? '' : ' busy'}`} /> {free.free ? `Free now${free.until ? ` until ${fmt(free.until, 'HH:mm')}` : ''}` : `Busy until ${fmt(free.until, isSameDay(free.until, new Date()) ? 'HH:mm' : 'EEE HH:mm')}`}</p>}
+        <div className="row">
+          <button className="btn primary grow" onClick={onFindTime}>Find a time</button>
+          <button className="btn grow" onClick={onShowWeek}>Only {first}'s week</button>
+        </div>
       </div>
 
       <div className="group">

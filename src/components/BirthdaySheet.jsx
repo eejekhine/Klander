@@ -6,7 +6,7 @@ import { nextBirthday } from '../lib/birthdays'
 
 const countdown = n => (n === 0 ? 'Today!' : n === 1 ? 'Tomorrow' : `In ${n} days`)
 
-export default function BirthdaySheet({ occ, onClose }) {
+export default function BirthdaySheet({ occ, onClose, onPlan }) {
   const b = occ.birthday
   const p = b.person
   const next = nextBirthday(b.month, b.day)
@@ -24,6 +24,13 @@ export default function BirthdaySheet({ occ, onClose }) {
         {!b.me && !b.year && <p className="small muted" style={{ margin: 0 }}>{(p.display_name || p.username).split(/\s+/)[0]} keeps their age private.</p>}
         {b.me && <p className="small muted" style={{ margin: 0 }}>Change your birthday in Settings.</p>}
       </div>
+      {onPlan && (
+        <div className="group">
+          <h3>Plan something</h3>
+          <p className="small muted" style={{ margin: 0 }}>Find a time that works for your other friends. It stays a surprise: {b.person.display_name?.split(/\s+/)[0] || b.person.username} won't see the plan.</p>
+          <button className="btn primary block" onClick={onPlan}>Plan {b.short}'s birthday</button>
+        </div>
+      )}
     </Sheet>
   )
 }

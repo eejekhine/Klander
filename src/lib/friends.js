@@ -24,7 +24,7 @@ export function useFriends(uid) {
     const others = [...new Set(rows.map(r => (r.requester === uid ? r.addressee : r.requester)))]
     let profs = []
     if (others.length) {
-      const { data } = await supabase.from('profiles').select('id, username, display_name, avatar_url, colour, theme_config').in('id', others)
+      const { data } = await supabase.from('profiles').select('id, username, display_name, avatar_url, colour, theme_config, status_text, status_until').in('id', others)
       profs = data || []
     }
     const [{ data: evs }, { data: acts }] = await Promise.all([

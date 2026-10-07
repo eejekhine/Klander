@@ -1,6 +1,8 @@
 import { useState } from 'react'
 import { addDays, addMinutes, differenceInMinutes, format, parse } from 'date-fns'
 import Sheet from './Sheet'
+import { Avatar } from './FriendsSheet'
+import { statusLabel } from '../lib/plans'
 import { REPEATS, buildRRule, fmt, parseRRule, startOfDay } from '../lib/dates'
 
 const D = d => format(d, 'yyyy-MM-dd')
@@ -13,14 +15,18 @@ const VIS = [
   ['private', 'Private', 'Only you can see it']
 ]
 
-export default function EventEditor({ data, event, occurrence, start, onClose }) {
+export default function EventEditor({ data, event, occurrence, start, end, title: title0, invite = [], hide = [], friends = [], plans, onClose }) {
   const isNew = !event
   const s0 = event ? new Date(event.starts_at) : start
-  const e0 = event ? new Date(event.ends_at) : addMinutes(start, 60)
+  const e0 = event ? new Date(event.ends_at) : end || addMinutes(start, 60)
+  const guestRows = event && plans ? plans.guests.filter(g => g.event_id === event.id) : []
+  const [invitees, setInvitees] = useState(() => event ? guestRows.map(g => g.user_id) : invite)
+  const [hiddenFrom, setHiddenFrom] = useState(() => event?.hidden_from || hide)
+  const toggle = (list, set, id) => set(list.includes(id) ? list.filter(x => x !== id) : [...list, id])
   const allDay0 = event?.all_day || false
   const rep = parseRRule(event?.rrule)
 
-  const [title, setTitle] = useState(event?.title || '')
+  const [title, setTitle] = useState(event?.title || title0 || '')
   const [allDay, setAllDay] = useState(allDay0)
   const [sDate, setSDate] = useState(D(s0))
   const [sTime, setSTime] = useState(T(s0))
@@ -58,14 +64,17 @@ export default function EventEditor({ data, event, occurrence, start, onClose })
     else { s = join(sDate, sTime); e = join(eDate, eTime) }
     if (e <= s) return setError('The end needs to be after the start.')
     if (repeat !== 'none' && until && join(until) < startOfDay(s)) return setError('"Repeat until" is before the event starts.')
+    if (invitees.some(id => hiddenFrom.includes(id))) return setError("You can't invite someone you're hiding it from.")
     const rrule = repeat === 'custom' ? event.rrule : buildRRule(repeat, s, until || null)
     setBusy(true)
     try {
-      await data.saveEvent({
+      const row = await data.saveEvent({
         id: event?.id, title, all_day: allDay, starts_at: s.toISOString(), ends_at: e.toISOString(),
-        rrule, exdates: event?.exdates || [], category_id: categoryId || null, visibility, location: location.trim(), notes: notes.trim()
+        rrule, exdates: event?.exdates || [], category_id: categoryId || null, visibility, location: location.trim(), notes: notes.trim(),
+        hidden_from: hiddenFrom
       })
-      onClose()
+      if (plans && (invitees.length || guestRows.length)) await plans.setInvitees(row.id, invitees)
+      onClose(invitees.length && isNew ? `Invites sent to ${invitees.length} ${invitees.length === 1 ? 'friend' : 'friends'}.` : '')
     } catch (err) { setError(err.message); setBusy(false) }
   }
 
@@ -134,6 +143,35 @@ export default function EventEditor({ data, event, occurrence, start, onClose })
         </div>
         <p className="muted small">{VIS.find(v => v[0] === visibility)[2]}.</p>
       </div>
+
+      {friends.length > 0 && (
+        <div className="group">
+          <h3>Invite friends</h3>
+          <div className="pick-row">
+            {friends.map(p => {
+              const g = guestRows.find(x => x.user_id === p.id)
+              return (
+                <button key={p.id} type="button" className="pchip" aria-pressed={invitees.includes(p.id)} disabled={hiddenFrom.includes(p.id)} onClick={() => toggle(invitees, setInvitees, p.id)}>
+                  <Avatar person={p} size={22} />{(p.display_name || p.username).split(/\s+/)[0]}
+                  {g && invitees.includes(p.id) && <small className={`rsvp ${g.status}`}>{statusLabel(g.status)}</small>}
+                </button>
+              )
+            })}
+          </div>
+          <p className="muted small" style={{ margin: 0 }}>Guests see the full details, even if it's busy-only, and can answer Going, Maybe or Can't.</p>
+          <details className="surprise" open={hiddenFrom.length > 0}>
+            <summary>Keep it a surprise from…</summary>
+            <div className="pick-row">
+              {friends.map(p => (
+                <button key={p.id} type="button" className="pchip" aria-pressed={hiddenFrom.includes(p.id)} disabled={invitees.includes(p.id)} onClick={() => toggle(hiddenFrom, setHiddenFrom, p.id)}>
+                  <Avatar person={p} size={22} />{(p.display_name || p.username).split(/\s+/)[0]}
+                </button>
+              ))}
+            </div>
+            <p className="muted small" style={{ margin: 0 }}>They won't see this event or its title in activity. They'll only ever see you as busy.</p>
+          </details>
+        </div>
+      )}
 
       <div className="group">
         <label className="field"><span>Location</span><input id="ev-loc" className="input" value={location} onChange={e => setLocation(e.target.value)} placeholder="e.g. The Edge, Leeds Beckett" maxLength={200} /></label>

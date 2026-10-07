@@ -219,3 +219,101 @@ grant execute on function public.friend_birthdays() to authenticated;
 -- Smart add gains a "theme" mode
 alter table public.ai_usage drop constraint if exists ai_usage_kind_check;
 alter table public.ai_usage add constraint ai_usage_kind_check check (kind in ('text','photo','theme'));
+
+-- ============================================================
+-- Phase 7: plans, invites, free time, "up for something"
+-- ============================================================
+alter table public.events add column hidden_from uuid[] not null default '{}';  -- surprise plans
+
+-- friend_events() now also skips events hidden from the caller:
+--   ... where e.visibility <> 'private' and not ((select auth.uid()) = any(e.hidden_from));
+-- log_event_activity() now leaves the title out for busy-only events AND for surprise events (hidden_from not empty).
+
+-- Free/busy for the free-time finder: times only, never titles. Private events count as busy too.
+create or replace function public.friend_busy()
+returns table (owner_id uuid, starts_at timestamptz, ends_at timestamptz, all_day boolean, rrule text, exdates timestamptz[])
+language sql stable security definer set search_path = '' as $$
+  select e.owner_id, e.starts_at, e.ends_at, e.all_day, e.rrule, e.exdates
+  from public.events e
+  where public.is_friend(e.owner_id)
+    and (e.rrule is not null or e.ends_at > now() - interval '1 day');
+$$;
+revoke execute on function public.friend_busy() from public, anon;
+grant execute on function public.friend_busy() to authenticated;
+
+create table public.event_invites (
+  event_id uuid not null references public.events(id) on delete cascade,
+  user_id uuid not null references public.profiles(id) on delete cascade,
+  status text not null default 'invited' check (status in ('invited','going','maybe','declined')),
+  responded_at timestamptz,
+  created_at timestamptz not null default now(),
+  primary key (event_id, user_id)
+);
+alter table public.event_invites enable row level security;
+create policy "Owner and guest see invite" on public.event_invites for select to authenticated
+  using (user_id = (select auth.uid())
+     or exists (select 1 from public.events e where e.id = event_id and e.owner_id = (select auth.uid())));
+create policy "Owner invites friends" on public.event_invites for insert to authenticated
+  with check (status = 'invited' and public.is_friend(user_id)
+     and exists (select 1 from public.events e where e.id = event_id and e.owner_id = (select auth.uid())
+                 and not (user_id = any(e.hidden_from))));
+create policy "Owner removes invite" on public.event_invites for delete to authenticated
+  using (exists (select 1 from public.events e where e.id = event_id and e.owner_id = (select auth.uid())));
+create policy "Guest answers" on public.event_invites for update to authenticated
+  using (user_id = (select auth.uid())) with check (user_id = (select auth.uid()));
+revoke update on public.event_invites from authenticated, anon;
+grant update (status, responded_at) on public.event_invites to authenticated;   -- guests can only change their answer
+
+create or replace function public.my_invites()
+returns table (id uuid, owner_id uuid, title text, location text, notes text, starts_at timestamptz, ends_at timestamptz,
+               all_day boolean, rrule text, exdates timestamptz[], my_status text, guests jsonb)
+language sql stable security definer set search_path = '' as $$
+  select e.id, e.owner_id, e.title, e.location, e.notes, e.starts_at, e.ends_at, e.all_day, e.rrule, e.exdates, i.status,
+         (select coalesce(jsonb_agg(jsonb_build_object('user_id', g.user_id, 'status', g.status)), '[]'::jsonb)
+            from public.event_invites g where g.event_id = e.id)
+  from public.event_invites i
+  join public.events e on e.id = i.event_id
+  where i.user_id = (select auth.uid())
+    and public.is_friend(e.owner_id)
+    and (e.rrule is not null or e.ends_at > now() - interval '7 days');
+$$;
+revoke execute on function public.my_invites() from public, anon;
+grant execute on function public.my_invites() to authenticated;
+
+create table public.broadcasts (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null default auth.uid() references public.profiles(id) on delete cascade,
+  message text not null check (char_length(btrim(message)) between 1 and 140),
+  starts_at timestamptz not null default now(),
+  ends_at timestamptz not null,
+  created_at timestamptz not null default now(),
+  check (ends_at > starts_at and ends_at <= starts_at + interval '7 days')
+);
+alter table public.broadcasts enable row level security;
+create policy "Own or friends' broadcasts" on public.broadcasts for select to authenticated
+  using (user_id = (select auth.uid()) or public.is_friend(user_id));
+create policy "Post own broadcast" on public.broadcasts for insert to authenticated with check (user_id = (select auth.uid()));
+create policy "Edit own broadcast" on public.broadcasts for update to authenticated using (user_id = (select auth.uid())) with check (user_id = (select auth.uid()));
+create policy "Delete own broadcast" on public.broadcasts for delete to authenticated using (user_id = (select auth.uid()));
+
+create table public.broadcast_replies (
+  broadcast_id uuid not null references public.broadcasts(id) on delete cascade,
+  user_id uuid not null default auth.uid() references public.profiles(id) on delete cascade,
+  reply text not null default 'in' check (reply in ('in','maybe')),
+  created_at timestamptz not null default now(),
+  primary key (broadcast_id, user_id)
+);
+alter table public.broadcast_replies enable row level security;
+create policy "See replies" on public.broadcast_replies for select to authenticated
+  using (user_id = (select auth.uid()) or public.is_friend(user_id)
+      or exists (select 1 from public.broadcasts b where b.id = broadcast_id and b.user_id = (select auth.uid())));
+create policy "Reply to friends' broadcasts" on public.broadcast_replies for insert to authenticated
+  with check (user_id = (select auth.uid())
+     and exists (select 1 from public.broadcasts b where b.id = broadcast_id and public.is_friend(b.user_id) and b.ends_at > now()));
+create policy "Change own reply" on public.broadcast_replies for update to authenticated
+  using (user_id = (select auth.uid())) with check (user_id = (select auth.uid()));
+create policy "Remove own reply" on public.broadcast_replies for delete to authenticated using (user_id = (select auth.uid()));
+
+alter table public.profiles add column status_text text check (char_length(status_text) <= 60);
+alter table public.profiles add column status_until timestamptz;
+-- alter publication supabase_realtime add table public.event_invites, public.broadcasts, public.broadcast_replies;
