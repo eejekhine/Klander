@@ -88,6 +88,7 @@ export function useKlanderData(user) {
       starts_at: ev.starts_at, ends_at: ev.ends_at, all_day: ev.all_day, category_id: ev.category_id || null,
       visibility: ev.visibility, rrule: ev.rrule || null, exdates: ev.exdates || []
     }
+    if (!ev.id) row.source = ev.source || 'manual'
     const q = ev.id
       ? supabase.from('events').update(row).eq('id', ev.id).select().single()
       : supabase.from('events').insert(row).select().single()

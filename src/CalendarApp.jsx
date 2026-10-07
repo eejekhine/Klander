@@ -12,6 +12,7 @@ import FriendsSheet, { Avatar } from './components/FriendsSheet'
 import FriendEventSheet from './components/FriendEventSheet'
 import CalendarsSheet from './components/CalendarsSheet'
 import ImportedEventSheet from './components/ImportedEventSheet'
+import SmartAddSheet from './components/SmartAddSheet'
 import { useCalendarSources } from './lib/sync'
 
 const VIEWS = [['day', 'Day'], ['week', 'Week'], ['month', 'Month'], ['agenda', 'List']]
@@ -119,6 +120,10 @@ export default function CalendarApp({ data, user }) {
           <AgendaView from={range.from} occurrences={occurrences} colourOf={colourOf} catMap={catMap} now={now} onEvent={openEvent} />}
       </main>
 
+      <button className="fab-smart" onClick={() => setSheet('smart')}>
+        <svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 2l1.9 5.6L19.5 9.5l-5.6 1.9L12 17l-1.9-5.6L4.5 9.5l5.6-1.9zM19 14l.9 2.6 2.6.9-2.6.9L19 21l-.9-2.6-2.6-.9 2.6-.9z"/></svg>
+        Smart add
+      </button>
       <button className="fab" aria-label="New event" onClick={() => openNew()}>+</button>
       {!data.online && <div className="offline-pill">Offline · showing saved calendar</div>}
       {toast && <div className="toast" role="status">{toast}</div>}
@@ -126,6 +131,7 @@ export default function CalendarApp({ data, user }) {
       {editing && <EventEditor data={data} {...editing} onClose={() => setEditing(null)} />}
       {viewing && <FriendEventSheet occ={viewing} onClose={() => setViewing(null)} />}
       {sheet === 'settings' && <Settings data={data} onClose={() => setSheet(null)} onOpenCalendars={() => setSheet('calendars')} />}
+      {sheet === 'smart' && <SmartAddSheet data={data} onClose={() => setSheet(null)} onDone={msg => { setSheet(null); setToast(msg) }} />}
       {sheet === 'calendars' && <CalendarsSheet data={data} cal={cal} onClose={() => setSheet(null)} />}
       {imported && <ImportedEventSheet occ={imported} source={cal.sources.find(s => s.id === imported.source_id)}
         category={catMap[imported.category_id]} onClose={() => setImported(null)} onOpenCalendars={() => { setImported(null); setSheet('calendars') }} />}

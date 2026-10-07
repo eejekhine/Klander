@@ -1,0 +1,75 @@
+import { addDays, addMinutes, parse } from 'date-fns'
+import { supabase } from './supabase'
+import { buildRRule, fmt, startOfDay } from './dates'
+
+/** Shrink a photo/screenshot so it uploads fast and stays within the AI's limits. */
+export function prepareImage(file, maxSide = 1600) {
+  return new Promise((resolve, reject) => {
+    const img = new Image()
+    img.onload = () => {
+      const scale = Math.min(1, maxSide / Math.max(img.width, img.height))
+      const c = document.createElement('canvas')
+      c.width = Math.round(img.width * scale); c.height = Math.round(img.height * scale)
+      c.getContext('2d').drawImage(img, 0, 0, c.width, c.height)
+      URL.revokeObjectURL(img.src)
+      const dataUrl = c.toDataURL('image/jpeg', 0.85)
+      resolve({ base64: dataUrl.split(',')[1], mime: 'image/jpeg', preview: dataUrl })
+    }
+    img.onerror = () => reject(new Error("Couldn't open that image. Try a screenshot or a JPG."))
+    img.src = URL.createObjectURL(file)
+  })
+}
+
+export async function readWithAI({ text, image }) {
+  const now = new Date()
+  const { data, error } = await supabase.functions.invoke('smart-add', {
+    body: {
+      text, image: image?.base64, mime: image?.mime,
+      now: fmt(now, "EEEE d MMMM yyyy, HH:mm"),
+      tz: Intl.DateTimeFormat().resolvedOptions().timeZone || 'Europe/London'
+    }
+  })
+  if (error) {
+    let msg = "Couldn't reach smart add. Check your connection."
+    try { msg = (await error.context.json()).error || msg } catch { /* keep */ }
+    throw new Error(msg)
+  }
+  return data
+}
+
+const at = (date, time) => parse(`${date} ${time || '00:00'}`, 'yyyy-MM-dd HH:mm', new Date())
+
+/** AI draft -> the shape saveEvent() expects. */
+export function draftToEvent(d, { category_id = null, visibility = 'friends' } = {}) {
+  let s, e
+  if (d.all_day) {
+    s = startOfDay(at(d.date))
+    e = addDays(startOfDay(at(d.end_date && d.end_date >= d.date ? d.end_date : d.date)), 1)
+  } else {
+    s = at(d.date, d.start_time)
+    if (d.end_time) {
+      e = at(d.end_date || d.date, d.end_time)
+      if (e <= s) e = addDays(e, 1) // e.g. 23:30 -> 08:30 night shift
+    } else e = addMinutes(s, 60)
+  }
+  let rrule = null
+  if (d.repeat === 'weekly' && d.repeat_days?.length) {
+    rrule = `FREQ=WEEKLY;BYDAY=${d.repeat_days.join(',')}`
+    if (d.repeat_until) rrule += `;UNTIL=${d.repeat_until.replace(/-/g, '')}T235959Z`
+  } else if (d.repeat && d.repeat !== 'none') {
+    rrule = buildRRule(d.repeat, s, d.repeat_until || null)
+  }
+  return {
+    title: d.title, all_day: !!d.all_day, starts_at: s.toISOString(), ends_at: e.toISOString(),
+    location: d.location || '', notes: d.notes || '', rrule, exdates: [], category_id, visibility
+  }
+}
+
+const DAY_NAMES = { MO: 'Mon', TU: 'Tue', WE: 'Wed', TH: 'Thu', FR: 'Fri', SA: 'Sat', SU: 'Sun' }
+export function repeatLabel(d) {
+  if (!d.repeat || d.repeat === 'none') return null
+  const days = d.repeat_days?.length ? ` on ${d.repeat_days.map(x => DAY_NAMES[x]).join(', ')}` : ''
+  const until = d.repeat_until ? ` until ${fmt(at(d.repeat_until), 'd MMM')}` : ''
+  const base = { daily: 'Every day', weekdays: 'Every weekday', weekly: 'Every week', fortnightly: 'Every 2 weeks', monthly: 'Every month', yearly: 'Every year' }[d.repeat]
+  return `${base}${d.repeat === 'weekly' ? days : ''}${until}`
+}
