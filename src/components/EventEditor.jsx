@@ -132,7 +132,7 @@ export default function EventEditor({ data, event, occurrence, start, onClose })
         <div className="seg" role="group" aria-label="Visibility" style={{ width: '100%' }}>
           {VIS.map(([v, l]) => <button key={v} type="button" style={{ flex: 1 }} aria-pressed={visibility === v} onClick={() => setVisibility(v)}>{l}</button>)}
         </div>
-        <p className="muted small">{VIS.find(v => v[0] === visibility)[2]}. Friends arrive in the next update.</p>
+        <p className="muted small">{VIS.find(v => v[0] === visibility)[2]}.</p>
       </div>
 
       <div className="group">

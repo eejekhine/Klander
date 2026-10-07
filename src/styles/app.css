@@ -236,3 +236,29 @@ textarea.input { resize: vertical; min-height: 72px; }
 .title-input:focus-visible { outline: none; border-bottom: 2px solid var(--accent); }
 
 @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
+
+/* ---------- friends ---------- */
+.person-row { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 12px; align-items: center; }
+.person-row .who { min-width: 0; display: grid; }
+.person-row .who b, .person-row .who small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.person-row .who small { color: var(--muted); }
+.people-strip { display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; margin: 0 -16px; padding: 0 16px; }
+.people-strip::-webkit-scrollbar { display: none; }
+.pchip {
+  display: inline-flex; align-items: center; gap: 6px; flex: none; border: 1px solid var(--line);
+  background: var(--surface); border-radius: 999px; padding: 3px 10px 3px 3px; font-size: 13px; font-weight: 500;
+}
+.pchip .avatar { width: 24px; height: 24px; font-size: 10px; border-width: 0; }
+.pchip[aria-pressed="false"] { opacity: .45; }
+.pchip.add { padding: 3px 10px; color: var(--accent); }
+.badge { background: var(--now); color: #fff; border-radius: 999px; font-size: 11px; padding: 0 6px; margin-left: 2px; }
+.ev.friend, .chip.friend { background: color-mix(in srgb, var(--c) 10%, var(--surface)); border-left-style: dotted; }
+.ev.busy, .chip.busy {
+  background: repeating-linear-gradient(135deg, color-mix(in srgb, var(--c) 14%, var(--surface)) 0 6px, var(--surface) 6px 12px);
+}
+.ev .who-tag { font-weight: 700; color: var(--c); }
+.toast {
+  position: fixed; left: 50%; transform: translateX(-50%); top: calc(12px + var(--safe-top)); z-index: 60;
+  background: var(--ink); color: var(--bg); padding: 10px 16px; border-radius: 12px; font-size: 14px; box-shadow: var(--shadow);
+  max-width: calc(100% - 32px);
+}

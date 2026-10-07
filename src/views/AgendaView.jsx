@@ -16,8 +16,8 @@ export default function AgendaView({ from, occurrences, colourOf, catMap, now, o
             {list.map(o => (
               <button key={o.key} className="agenda-item" style={{ '--c': colourOf(o) }} onClick={() => onEvent(o)}>
                 <i />
-                <span><b>{o.title}</b>
-                  <small>{!o.all_day && o.start < startOfDay(d) ? `Until ${fmt(o.end, 'HH:mm')}` : timeLabel(o)}{o.location ? ` · ${o.location}` : ''}{catMap[o.category_id] ? ` · ${catMap[o.category_id].name}` : ''}{o.rrule ? ' · repeats' : ''}</small>
+                <span><b>{o.friend && <span style={{ color: 'var(--c)' }}>{o.friend.display_name || o.friend.username} · </span>}{o.title}</b>
+                  <small>{!o.all_day && o.start < startOfDay(d) ? `Until ${fmt(o.end, 'HH:mm')}` : timeLabel(o)}{o.location ? ` · ${o.location}` : ''}{!o.friend && catMap[o.category_id] ? ` · ${catMap[o.category_id].name}` : ''}{o.rrule ? ' · repeats' : ''}</small>
                 </span>
               </button>
             ))}

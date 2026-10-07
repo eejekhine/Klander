@@ -2,38 +2,69 @@ import { useEffect, useMemo, useState } from 'react'
 import { addDays, addMonths, addWeeks } from 'date-fns'
 import { expandEvents, rangeFor, titleFor } from './lib/dates'
 import { initials } from './lib/colours'
+import { useFriends, pendingInvite, clearInvite } from './lib/friends'
 import TimeGrid from './views/TimeGrid'
 import MonthView from './views/MonthView'
 import AgendaView from './views/AgendaView'
 import EventEditor from './components/EventEditor'
 import Settings from './components/Settings'
+import FriendsSheet, { Avatar } from './components/FriendsSheet'
+import FriendEventSheet from './components/FriendEventSheet'
 
 const VIEWS = [['day', 'Day'], ['week', 'Week'], ['month', 'Month'], ['agenda', 'List']]
 const readView = () => { try { return localStorage.getItem('klander:view') || 'week' } catch { return 'week' } }
 
-export default function CalendarApp({ data }) {
+export default function CalendarApp({ data, user }) {
   const [view, setView] = useState(readView)
   const [date, setDate] = useState(() => new Date())
   const [editing, setEditing] = useState(null) // {event?, occurrence?, start?}
-  const [settingsOpen, setSettingsOpen] = useState(false)
+  const [viewing, setViewing] = useState(null) // a friend's occurrence
+  const [sheet, setSheet] = useState(null) // 'settings' | 'friends'
   const [now, setNow] = useState(() => new Date())
+  const [toast, setToast] = useState('')
+  const f = useFriends(user.id)
 
   useEffect(() => { try { localStorage.setItem('klander:view', view) } catch { /* ignore */ } }, [view])
   useEffect(() => { const t = setInterval(() => setNow(new Date()), 60000); return () => clearInterval(t) }, [])
+  useEffect(() => { if (!toast) return; const t = setTimeout(() => setToast(''), 4000); return () => clearTimeout(t) }, [toast])
+
+  // Arrived through someone's invite link? Become friends now that we're signed in.
+  useEffect(() => {
+    const code = pendingInvite()
+    if (!code) return
+    clearInvite()
+    f.acceptInvite(code)
+      .then(r => setToast(r === 'invalid' ? "That invite link doesn't work any more." : r === 'self' ? "That's your own invite link." : `You're now friends with @${r}.`))
+      .catch(() => setToast("Couldn't use that invite link. Try opening it again."))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const catMap = useMemo(() => Object.fromEntries(data.categories.map(c => [c.id, c])), [data.categories])
-  const colourOf = ev => catMap[ev.category_id]?.colour || data.profile.colour
   const range = useMemo(() => rangeFor(view, date), [view, date])
-  const occurrences = useMemo(() => expandEvents(data.events, range.from, range.to), [data.events, range])
+
+  const mine = useMemo(() => expandEvents(data.events, range.from, range.to), [data.events, range])
+  const theirs = useMemo(() => {
+    const visible = f.friendEvents.filter(e => f.people[e.owner_id] && !f.hidden.includes(e.owner_id))
+    return expandEvents(visible, range.from, range.to).map(o => ({ ...o, friend: f.people[o.owner_id] }))
+  }, [f.friendEvents, f.people, f.hidden, range])
+  const meHidden = f.hidden.includes(user.id)
+  const occurrences = useMemo(
+    () => [...(meHidden ? [] : mine), ...theirs].sort((a, b) => a.start - b.start || b.end - a.end),
+    [mine, theirs, meHidden])
+
+  const colourOf = ev => (ev.friend ? ev.friend.colour : catMap[ev.category_id]?.colour || data.profile.colour)
 
   const step = dir => setDate(d =>
     view === 'day' ? addDays(d, dir) : view === 'week' ? addWeeks(d, dir) : view === 'month' ? addMonths(d, dir) : addDays(d, dir * 30))
 
   const openNew = start => setEditing({ start: start || defaultStart(date) })
-  const openEvent = occ => setEditing({ event: data.events.find(e => e.id === occ.id), occurrence: occ.occurrence || null })
+  const openEvent = occ => (occ.friend
+    ? setViewing(occ)
+    : setEditing({ event: data.events.find(e => e.id === occ.id), occurrence: occ.occurrence || null }))
   const openDay = d => { setDate(d); setView('day') }
 
   const p = data.profile
+  const requests = f.incoming.length
   return (
     <div className="app">
       <header className="topbar">
@@ -42,13 +73,24 @@ export default function CalendarApp({ data }) {
           <button className="btn" style={{ padding: '8px 12px' }} onClick={() => setDate(new Date())}>Today</button>
           <button className="icon-btn" aria-label="Previous" onClick={() => step(-1)}>‹</button>
           <button className="icon-btn" aria-label="Next" onClick={() => step(1)}>›</button>
-          <button className="avatar" aria-label="Profile and settings" onClick={() => setSettingsOpen(true)}
+          <button className="avatar" aria-label="Profile and settings" onClick={() => setSheet('settings')}
             style={p.avatar_url ? { backgroundImage: `url(${p.avatar_url})`, borderColor: p.colour } : { background: p.colour, borderColor: p.colour }}>
             {!p.avatar_url && initials(p)}
           </button>
         </div>
         <div className="seg" role="group" aria-label="View" style={{ justifySelf: 'start' }}>
           {VIEWS.map(([v, label]) => <button key={v} aria-pressed={view === v} onClick={() => setView(v)}>{label}</button>)}
+        </div>
+        <div className="people-strip" role="group" aria-label="Whose events to show">
+          <button className="pchip" aria-pressed={!meHidden} onClick={() => f.toggleHidden(user.id)}><Avatar person={p} size={24} />You</button>
+          {f.friends.map(({ person }) => (
+            <button key={person.id} className="pchip" aria-pressed={!f.hidden.includes(person.id)} onClick={() => f.toggleHidden(person.id)}>
+              <Avatar person={person} size={24} />{(person.display_name || person.username).split(/\s+/)[0]}
+            </button>
+          ))}
+          <button className="pchip add" onClick={() => setSheet('friends')}>
+            {f.friends.length ? 'Friends' : '+ Add friends'}{requests > 0 && <span className="badge">{requests}</span>}
+          </button>
         </div>
       </header>
 
@@ -64,9 +106,12 @@ export default function CalendarApp({ data }) {
 
       <button className="fab" aria-label="New event" onClick={() => openNew()}>+</button>
       {!data.online && <div className="offline-pill">Offline · showing saved calendar</div>}
+      {toast && <div className="toast" role="status">{toast}</div>}
 
       {editing && <EventEditor data={data} {...editing} onClose={() => setEditing(null)} />}
-      {settingsOpen && <Settings data={data} onClose={() => setSettingsOpen(false)} />}
+      {viewing && <FriendEventSheet occ={viewing} onClose={() => setViewing(null)} />}
+      {sheet === 'settings' && <Settings data={data} onClose={() => setSheet(null)} />}
+      {sheet === 'friends' && <FriendsSheet f={f} onClose={() => setSheet(null)} />}
     </div>
   )
 }

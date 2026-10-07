@@ -48,7 +48,7 @@ export default function TimeGrid({ days, occurrences, colourOf, now, onEvent, on
           {days.map(d => (
             <div key={d.getTime()} className="cell">
               {allDayOn(occurrences, d).map(o =>
-                <button key={o.key} className="chip" style={{ '--c': colourOf(o) }} onClick={() => onEvent(o)}>{o.title}</button>)}
+                <button key={o.key} className={chipClass(o)} style={{ '--c': colourOf(o) }} onClick={() => onEvent(o)}>{o.friend ? `${first(o.friend)}: ` : ''}{o.title}</button>)}
             </div>
           ))}
         </div>
@@ -68,9 +68,9 @@ export default function TimeGrid({ days, occurrences, colourOf, now, onEvent, on
                 {layoutDay(occurrences, d).map(({ ev, top, bottom, col, cols: n }) => {
                   const h = (bottom - top) / 60 * HOUR
                   return (
-                    <button key={ev.key} className="ev" onClick={() => onEvent(ev)}
+                    <button key={ev.key} className={`ev${ev.friend ? ' friend' : ''}${ev.friend && ev.visibility === 'busy' ? ' busy' : ''}`} onClick={() => onEvent(ev)}
                       style={{ '--c': colourOf(ev), top: top / 60 * HOUR + 1, height: h - 2, left: `calc(${col / n * 100}% + 2px)`, width: `calc(${100 / n}% - 4px)` }}>
-                      <b>{ev.title}</b>
+                      <b>{ev.friend && <span className="who-tag">{first(ev.friend)} </span>}{ev.title}</b>
                       {h > 34 && <small>{timeLabel(ev)}</small>}
                       {h > 52 && ev.location && <small>{ev.location}</small>}
                     </button>
@@ -85,3 +85,6 @@ export default function TimeGrid({ days, occurrences, colourOf, now, onEvent, on
     </div>
   )
 }
+
+export const first = p => (p.display_name || p.username || '').split(/\s+/)[0]
+export const chipClass = o => `chip${o.friend ? ' friend' : ''}${o.friend && o.visibility === 'busy' ? ' busy' : ''}`

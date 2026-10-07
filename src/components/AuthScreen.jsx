@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { supabase } from '../lib/supabase'
+import { pendingInvite } from '../lib/friends'
 
 export default function AuthScreen() {
   const [mode, setMode] = useState('signin') // signin | signup | forgot
@@ -44,6 +45,7 @@ export default function AuthScreen() {
       <div className="auth-card">
         <span className="wordmark">Klander<i>.</i></span>
         <p className="tagline">Your calendar, and your friends' weeks, in one place.</p>
+        {pendingInvite() && <p className="notice">You've been invited to Klander. Create an account (or sign in) and you'll be added as friends automatically.</p>}
 
         {mode !== 'forgot' && (
           <div className="seg" role="group" aria-label="Account">
