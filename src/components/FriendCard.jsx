@@ -1,4 +1,6 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import { addDays } from 'date-fns'
+import { hangouts } from '../lib/insights'
 import Sheet from './Sheet'
 import { Avatar } from './FriendsSheet'
 import { Cake } from '../views/TimeGrid'
@@ -12,6 +14,13 @@ export default function FriendCard({ person, birthday, data, free, social, onClo
   const [trying, setTrying] = useState(false)
   const [msg, setMsg] = useState('')
   const [error, setError] = useState('')
+  const [hang, setHang] = useState(null)
+  useEffect(() => {
+    let live = true
+    const now = new Date()
+    hangouts(addDays(now, -30), now).then(r => { if (live) setHang(r.find(h => h.friend_id === person.id) || { plans: 0 }) }).catch(() => {})
+    return () => { live = false }
+  }, [person.id])
   const theirs = person.theme_config && Object.keys(person.theme_config).length ? { ...DEFAULT_THEME, ...person.theme_config } : null
   const next = birthday ? nextBirthday(birthday.month, birthday.day) : null
   const first = (person.display_name || person.username).split(/\s+/)[0]
@@ -41,6 +50,9 @@ export default function FriendCard({ person, birthday, data, free, social, onClo
         </div>
         {statusOn && <p className="status-note" style={{ margin: 0 }}>“{person.status_text}”{person.status_until ? <small className="muted"> · until {fmt(new Date(person.status_until), 'HH:mm')}</small> : null}</p>}
         {free && <p className="small" style={{ margin: 0 }}><i className={`free-dot inline${free.free ? '' : ' busy'}`} /> {free.free ? `Free now${free.until ? ` until ${fmt(free.until, 'HH:mm')}` : ''}` : `Busy until ${fmt(free.until, isSameDay(free.until, new Date()) ? 'HH:mm' : 'EEE HH:mm')}`}</p>}
+        {hang && <p className="hang-note">{hang.plans > 0
+          ? <>You and {first}: <b>{hang.plans} {hang.plans === 1 ? 'plan' : 'plans'}</b> in the last 30 days<span className="muted"> · last {fmt(new Date(hang.last_at), 'd MMM')}</span></>
+          : <span className="muted">No plans with {first} in the last 30 days.</span>}</p>}
         <div className="row">
           <button className="btn primary grow" onClick={onMessage}>Message</button>
           <button className="btn grow" onClick={onFindTime}>Find a time</button>

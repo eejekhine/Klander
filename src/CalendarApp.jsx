@@ -35,6 +35,8 @@ import MyWeekSheet from './components/MyWeekSheet'
 import StoryViewer from './components/StoryViewer'
 import AddPhotoSheet from './components/AddPhotoSheet'
 import ChangeSheet from './components/ChangeSheet'
+import InsightsSheet from './components/InsightsSheet'
+import { termOf, wrappedSeason } from './lib/insights'
 import { onThisDay, photoUrls, useWeeks, weekStartOf, isoDay } from './lib/memories'
 import { supabase } from './lib/supabase'
 import WelcomeTour from './components/WelcomeTour'
@@ -242,7 +244,7 @@ export default function CalendarApp({ data, user }) {
     const go = {
       views: () => setMenu('view'), add: () => setMenu('add'), smart: () => setSheet('smart'), calendars: () => setSheet('calendars'),
       friends: () => openFriends(), find: () => openPlans({ tab: 'find' }), plans: () => openPlans(), up: () => openPlans({ tab: 'up' }),
-      chat: () => openChat(), myweek: () => setSheet('myweek'), change: () => setSheet('change'), notify: () => setSheet('notify'), appearance: () => setSheet('appearance'), settings: () => setSheet('settings')
+      chat: () => openChat(), myweek: () => setSheet('myweek'), change: () => setSheet('change'), notify: () => setSheet('notify'), appearance: () => setSheet('appearance'), settings: () => setSheet('settings'), insights: () => setSheet('insights')
     }[what]
     if (go) setTimeout(go, 120)
   }
@@ -258,6 +260,8 @@ export default function CalendarApp({ data, user }) {
     else if (open?.startsWith('poll:')) setPollView({ id: open.slice(5) })
     else if (open?.startsWith('chat:')) openChat(open.slice(5))
     else if (open === 'myweek') setSheet('myweek')
+    else if (open === 'insights') setSheet('insights')
+    else if (open === 'wrapped') setSheet('wrapped')
     else if (open?.startsWith('week:')) { const id = open.slice(5); const w = wk.weeks.find(x => x.id === id); if (w) openWeek(w); else wk.refresh().then(() => setTimeout(() => setPendingWeek(id), 0)) }
     else if (open?.startsWith('event:')) {
       const ev = data.events.find(e => e.id === open.slice(6))
@@ -292,8 +296,14 @@ export default function CalendarApp({ data, user }) {
     else { setSheet(null); if (ref.starts_at) setDate(new Date(ref.starts_at)); setToast("That's on their calendar. You can see it on that day.") }
   }
   const showsToday = now >= range.from && now < range.to
+  const [wrapSeen, setWrapSeen] = useState(() => { try { return localStorage.getItem('klander:wrapped-seen') || '' } catch { return '' } })
+  const wrapKey = wrappedSeason(now) && data.events.length >= 5 && wrapSeen !== termOf(now).key ? termOf(now).key : null
   // One slim, swipeable row of "today" cards: countdowns, friends looking for plans, birthdays
   const cards = [
+    ...(wrapKey ? [(
+      <button key="wrapped" className="card week-ready" onClick={() => { setSheet('wrapped'); try { localStorage.setItem('klander:wrapped-seen', wrapKey) } catch { /* ignore */ } setWrapSeen(wrapKey) }}>
+        <span className="otd-ic">W</span><span>Your <b>{termOf(now).short.toLowerCase()} Wrapped</b> is ready</span>
+      </button>)] : []),
     ...(weekendish && !myWeekPosted ? [(
       <button key="myweek" className="card week-ready" onClick={() => setSheet('myweek')}>
         <span className="wk-ring"><Avatar person={p} size={26} /></span><span><b>Your week</b> is ready to share</span>
@@ -359,6 +369,7 @@ export default function CalendarApp({ data, user }) {
                 </button>
               ))}
               <button role="menuitem" className="menu-today" onClick={() => { setDate(new Date()); setMenu(null) }}>Go to today</button>
+              <button role="menuitem" className="menu-help" onClick={() => { setMenu(null); setSheet('insights') }}>Insights</button>
               <button role="menuitem" className="menu-help" onClick={() => { setMenu(null); setSheet('help') }}>Help &amp; tips</button>
               {season && <p className="menu-note"><span className="season-dot" /> {season.label}</p>}
             </div>
@@ -489,6 +500,7 @@ export default function CalendarApp({ data, user }) {
           }} />
       })()}
       {sheet === 'change' && <ChangeSheet data={data} onClose={() => setSheet(null)} onDone={(msg, undoFn) => { setSheet(null); if (undoFn) setUndo({ msg, fn: undoFn }); else setToast(msg) }} />}
+      {(sheet === 'insights' || sheet === 'wrapped') && <InsightsSheet uid={user.id} me={p} data={data} goingPlans={goingPlans} guests={pl.guests} people={f.people} startWrapped={sheet === 'wrapped'} onClose={() => setSheet(null)} onPerson={person => { setSheet(null); setCard(person) }} />}
       {sheet === 'help' && <HelpSheet onClose={() => setSheet(null)} onShow={showMe} onTour={() => { setSheet(null); setTour(true) }} />}
       {tour && !editing && <WelcomeTour onDone={doneTour} />}
       {sheet === 'chat' && <ChatScreen chats={ch} uid={user.id} me={p} people={f.people} friends={f.friends.map(x => x.person)} initialId={chatOpen} upcoming={upcoming}

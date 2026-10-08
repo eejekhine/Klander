@@ -452,3 +452,31 @@ create table public.poll_votes (option_id uuid not null references public.poll_o
 -- notify_settings.morning_brief, brief_time, quiet_follow_sleep.
 -- notifications.dedupe_key (unique) so reminders and briefs are only made once
 --   (the earlier partial unique index couldn't be used by ON CONFLICT, so reminders were silently not being created).
+-- Phase 11: hangout stats. Only ever returns counts that involve the caller, and only with friends.
+create or replace function public.hangout_counts(p_from timestamptz, p_to timestamptz)
+returns table (friend_id uuid, plans int, last_at timestamptz)
+language sql stable security definer set search_path = '' as $$
+  with me as (select (select auth.uid()) as id),
+  ev as (
+    select e.id, e.starts_at, e.owner_id
+    from public.events e
+    where e.starts_at >= p_from and e.starts_at < least(p_to, now())
+      and e.starts_at > now() - interval '400 days'
+      and e.source_id is null
+  ),
+  people as (
+    select ev.id, ev.starts_at, ev.owner_id as uid from ev
+    union
+    select ev.id, ev.starts_at, i.user_id from ev join public.event_invites i on i.event_id = ev.id and i.status = 'going'
+  ),
+  mine as (select p.id from people p, me where p.uid = me.id)
+  select p.uid, count(distinct p.id)::int, max(p.starts_at)
+  from people p join mine m on m.id = p.id, me
+  where p.uid <> me.id
+    and exists (select 1 from public.friendships f where f.status = 'accepted'
+                and ((f.requester = me.id and f.addressee = p.uid) or (f.addressee = me.id and f.requester = p.uid)))
+    and not exists (select 1 from public.blocks b where (b.user_id = me.id and b.blocked_id = p.uid) or (b.user_id = p.uid and b.blocked_id = me.id))
+  group by p.uid
+$$;
+revoke execute on function public.hangout_counts(timestamptz, timestamptz) from public, anon;
+grant execute on function public.hangout_counts(timestamptz, timestamptz) to authenticated;

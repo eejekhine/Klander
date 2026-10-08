@@ -71,6 +71,15 @@ export const HELP = [
     ]
   },
   {
+    group: 'Insights',
+    items: [
+      { id: 'insights', title: 'See where your time goes', body: 'Tap the month name, then Insights. Hours by category, your busiest day and week, for this month, term or year. Only you can see it.', show: 'insights' },
+      { id: 'streaks', title: 'Streaks', body: 'Do something in the same category every week (gym, ball, revision) and Insights shows how many weeks running. Shifts don\'t count.', show: 'insights' },
+      { id: 'hangouts', title: 'Plans with each friend', body: 'Insights and each friend\'s card show how many plans you both went to. Only the two of you can see your count.', show: 'insights' },
+      { id: 'wrapped', title: 'Klander Wrapped', body: 'At the end of each term, a story of your term: top category, your number one, a favourite photo and your longest streak. Insights → Play my Wrapped, then Save image to post it.', show: 'insights' }
+    ]
+  },
+  {
     group: 'Make it yours',
     items: [
       { id: 'themes', title: 'Change the look', body: 'Your photo → Themes and appearance. Pick a theme, describe a vibe for the AI to design one, or make one from a photo.', show: 'appearance' },

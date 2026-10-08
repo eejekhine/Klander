@@ -436,6 +436,7 @@ input[type="date"].input, input[type="time"].input { -webkit-appearance: none; a
 .poll-voters { display: flex; gap: 4px; min-height: 0; }
 .voter.maybe { opacity: .55; }
 .seg { overflow-x: auto; scrollbar-width: none; }
+.sheet-body > .seg, .sheet-body > .group > .seg { overflow: visible; flex-wrap: nowrap; }
 .seg::-webkit-scrollbar { display: none; }
 .pchip.group-chip[aria-pressed="false"], .pchip.plans { opacity: 1; }
 
@@ -700,3 +701,23 @@ input[type="date"].input, input[type="time"].input { -webkit-appearance: none; a
 .toast.undo { display: flex; align-items: center; gap: 14px; top: auto; bottom: calc(80px + var(--safe-bottom)); }
 .toast.undo button { background: none; border: 0; color: var(--accent-soft); font-weight: 700; font-size: 14px; padding: 0; }
 .change-card { gap: 6px; }
+
+/* Insights & Wrapped */
+.slide.big h1 { font-family: var(--display); font-size: 44px; line-height: 1.05; margin: 0; overflow-wrap: anywhere; }
+.big-eyebrow { text-transform: uppercase; letter-spacing: .12em; font-weight: 700; opacity: .8; }
+.slide.big:not(.cover) { background: radial-gradient(circle at 70% 15%, color-mix(in srgb, var(--accent) 45%, transparent), transparent 60%); }
+.ins-bars { display: grid; gap: 8px; }
+.ins-bar { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 10px; font-size: 14px; }
+.ins-bar i { grid-column: 1 / -1; height: 8px; border-radius: 99px; background: var(--line); overflow: hidden; display: block; }
+.ins-bar i b { display: block; height: 100%; border-radius: 99px; }
+.ins-big { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.ins-big div { background: var(--surface-2, var(--line)); border-radius: 14px; padding: 10px; display: grid; gap: 2px; }
+.ins-big b { font-size: 22px; font-family: var(--display); }
+.ins-big small { opacity: .7; font-size: 12px; }
+.streak { display: flex; align-items: center; gap: 10px; padding: 6px 0; }
+.streak .sw { width: 10px; height: 10px; border-radius: 50%; flex: none; }
+.streak span { flex: 1; min-width: 0; }
+.streak b { font-variant-numeric: tabular-nums; }
+.saw { display: flex; align-items: center; gap: 10px; padding: 4px 0; }
+.saw .saw-name { flex: 1; min-width: 0; }
+.hang-note { margin: 0; font-size: 14px; }

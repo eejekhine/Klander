@@ -6,7 +6,7 @@ import { REACTIONS } from '../lib/chat'
 const first = p => (p?.display_name || p?.username || '').split(/\s+/)[0]
 
 /** Full-screen story player for a My Week. Tap right/left to move, hold to pause. */
-export default function StoryViewer({ slides, owner, people = {}, caption, mine, onClose, onReact, myReaction, onReply, reactions = [] }) {
+export default function StoryViewer({ slides, owner, people = {}, caption, mine, heading, onClose, onReact, myReaction, onReply, reactions = [] }) {
   const show = slides.filter(s => !s.hidden)
   const [i, setI] = useState(0)
   const [paused, setPaused] = useState(false)
@@ -41,7 +41,7 @@ export default function StoryViewer({ slides, owner, people = {}, caption, mine,
     <div className="story" onClick={tap} onPointerDown={() => setPaused(true)} onPointerUp={() => setPaused(false)} onPointerLeave={() => setPaused(false)}>
       <div className="story-bars">{show.map((x, n) => <i key={x.key}><b style={{ width: `${n < i ? 100 : n === i ? progress * 100 : 0}%` }} /></i>)}</div>
       <div className="story-top story-ui">
-        <Avatar person={owner} size={30} /><b>{mine ? 'Your week' : `${first(owner)}'s week`}</b>
+        <Avatar person={owner} size={30} /><b>{heading || (mine ? 'Your week' : `${first(owner)}'s week`)}</b>
         <button className="story-x" aria-label="Close" onClick={onClose}>×</button>
       </div>
       <Slide s={s} url={urls[s.path]} people={people} caption={caption} />
@@ -60,6 +60,16 @@ export default function StoryViewer({ slides, owner, people = {}, caption, mine,
 }
 
 function Slide({ s, url, people, caption }) {
+  if (s.type === 'big') return (
+    <div className={`slide big${s.tone === 'cover' ? ' cover' : ''}`}>
+      <small className="big-eyebrow">{s.eyebrow}</small>
+      {s.person && people[s.person] && <Avatar person={people[s.person]} size={88} />}
+      <h1>{s.big}</h1>
+      {s.sub && <p className="slide-cap">{s.sub}</p>}
+      {s.list?.length > 0 && <div>{s.list.map(l => <div key={l.label} className="stat-bar"><span>{l.label}</span><b>{l.value}</b></div>)}</div>}
+      {s.people?.length > 0 && <div className="story-people">{s.people.map(id => people[id] && <span key={id}><Avatar person={people[id]} size={40} /><small>{first(people[id])}</small></span>)}</div>}
+    </div>
+  )
   if (s.type === 'cover') return (
     <div className="slide cover">
       <small>My week</small><h1>{s.range}</h1>
