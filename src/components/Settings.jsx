@@ -6,7 +6,7 @@ import { themeName, useThemeState } from '../lib/themes'
 import BirthdayFields from './BirthdayFields'
 import { REMINDERS } from '../lib/notify'
 
-export default function Settings({ data, bd, onClose, onOpenCalendars, onOpenAppearance, onOpenHelp }) {
+export default function Settings({ data, bd, onClose, onOpenCalendars, onOpenAppearance, onOpenHelp, onOpenInstall }) {
   const theme = useThemeState()
   const p = data.profile
   const [displayName, setDisplayName] = useState(p.display_name || '')
@@ -88,8 +88,9 @@ export default function Settings({ data, bd, onClose, onOpenCalendars, onOpenApp
       </div>
 
       <div className="group">
-        <h3>Install on your iPhone</h3>
-        <p className="small">Open Klander in Safari, tap the Share button, then <b>Add to Home Screen</b>. It then opens full-screen like a normal app.</p>
+        <h3>Add to your Home Screen</h3>
+        <p className="small muted" style={{ margin: 0 }}>Opens full screen like a normal app, and lets Klander send notifications.</p>
+        <button className="btn block" onClick={onOpenInstall}>Show me how</button>
       </div>
 
       <button className="btn danger block" onClick={() => supabase.auth.signOut()}>Sign out</button>

@@ -8,7 +8,7 @@ export const HELP = [
       { id: 'views', title: 'Switch between Day, Week, Month, List and People', body: 'Tap the month name at the top. People puts you and your friends side by side for one day.', show: 'views' },
       { id: 'faces', title: "Show or hide someone's events", body: "Tap a friend's photo at the top. Faded means hidden. A green dot means they're free right now.", show: 'calendar' },
       { id: 'groups', title: 'See just one group', body: 'Make a group in Friends (for example "Ballers"), then tap its name at the top to see only them. Tap again to see everyone.', show: 'friends' },
-      { id: 'install', title: 'Put Klander on your Home Screen', body: 'In Safari tap Share, then Add to Home Screen. It then opens full screen like a normal app, and notifications work.' }
+      { id: 'install', title: 'Put Klander on your Home Screen', body: 'iPhone: in Safari tap Share (on iOS 26, tap ••• first), then Add to Home Screen, then Add. Android: tap ⋮, then Add to Home screen or Install app. Open it from the new icon and sign in once more. Tap Show me for a step-by-step guide with pictures.', show: 'install' }
     ]
   },
   {
@@ -65,7 +65,7 @@ export const HELP = [
   {
     group: 'Notifications',
     items: [
-      { id: 'push', title: 'Turn on notifications', body: 'Tap the bell, then Turn on notifications. On iPhone, Klander must be on your Home Screen first.', show: 'notify' },
+      { id: 'push', title: 'Turn on notifications', body: 'Tap the bell, then Turn on notifications. On iPhone, Klander must be on your Home Screen first (see Put Klander on your Home Screen).', show: 'notify' },
       { id: 'quiet', title: 'Quiet hours and muting', body: 'Under the bell, set quiet hours (friend alerts wait until you are awake) and mute any friend. Your own reminders still come through.', show: 'notify' },
       { id: 'brief', title: 'Morning brief', body: 'Under the bell, turn on Morning brief to get a summary of your day, birthdays and who\'s free tonight at a time you choose.', show: 'notify' },
     ]
@@ -103,6 +103,7 @@ export const TOUR = [
   { title: 'Add things fast', body: 'Tap + to add an event, or use Smart add: type it like a text, or snap a poster or timetable.', art: 'add' },
   { title: 'See your friends', body: 'Their events show in their colour. Tap a face at the top to show or hide them. Green dot = free now.', art: 'friends' },
   { title: 'Make plans', body: 'Plans finds a time everyone is free, sends invites and lets friends vote. Chat keeps it all together.', art: 'plans' },
+  { title: 'Put it on your Home Screen', body: 'Klander works best from your Home Screen: full screen, faster, and with notifications. We\'ll show you how next.', art: 'install', onlyIfNotInstalled: true },
   { title: 'Help is always here', body: 'Forgot how something works? Tap the month name, then Help & tips.', art: 'help' }
 ]
 export const TOUR_KEY = 'klander:tour-done'

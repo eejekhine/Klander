@@ -36,6 +36,8 @@ import StoryViewer from './components/StoryViewer'
 import AddPhotoSheet from './components/AddPhotoSheet'
 import ChangeSheet from './components/ChangeSheet'
 import InsightsSheet from './components/InsightsSheet'
+import InstallSheet from './components/InstallSheet'
+import { INSTALL_CARD_KEY, isInstalled, isMobile } from './lib/install'
 import { termOf, wrappedSeason } from './lib/insights'
 import { onThisDay, photoUrls, useWeeks, weekStartOf, isoDay } from './lib/memories'
 import { supabase } from './lib/supabase'
@@ -82,7 +84,7 @@ export default function CalendarApp({ data, user }) {
     if (w.user_id !== user.id && !seenWeeks.includes(w.id)) { const n = [...seenWeeks, w.id].slice(-60); setSeenWeeks(n); try { localStorage.setItem('klander:seen-weeks', JSON.stringify(n)) } catch { /* ignore */ } }
   }
   const [tour, setTour] = useState(() => { try { return !localStorage.getItem(TOUR_KEY) } catch { return false } })
-  const doneTour = () => { setTour(false); try { localStorage.setItem(TOUR_KEY, '1') } catch { /* ignore */ } }
+  const doneTour = () => { setTour(false); try { localStorage.setItem(TOUR_KEY, '1') } catch { /* ignore */ } if (isMobile() && !isInstalled()) setTimeout(() => setSheet('install'), 250) }
   const openChat = id => { setCard(null); setInviteView(null); setEditing(null); setChatOpen(id || null); setSheet('chat') }
   const startChatWith = fn => fn().then(openChat).catch(e => setToast(e.message))
   const [pollView, setPollView] = useState(null)
@@ -244,7 +246,7 @@ export default function CalendarApp({ data, user }) {
     const go = {
       views: () => setMenu('view'), add: () => setMenu('add'), smart: () => setSheet('smart'), calendars: () => setSheet('calendars'),
       friends: () => openFriends(), find: () => openPlans({ tab: 'find' }), plans: () => openPlans(), up: () => openPlans({ tab: 'up' }),
-      chat: () => openChat(), myweek: () => setSheet('myweek'), change: () => setSheet('change'), notify: () => setSheet('notify'), appearance: () => setSheet('appearance'), settings: () => setSheet('settings'), insights: () => setSheet('insights')
+      chat: () => openChat(), myweek: () => setSheet('myweek'), change: () => setSheet('change'), notify: () => setSheet('notify'), appearance: () => setSheet('appearance'), settings: () => setSheet('settings'), insights: () => setSheet('insights'), install: () => setSheet('install')
     }[what]
     if (go) setTimeout(go, 120)
   }
@@ -296,10 +298,21 @@ export default function CalendarApp({ data, user }) {
     else { setSheet(null); if (ref.starts_at) setDate(new Date(ref.starts_at)); setToast("That's on their calendar. You can see it on that day.") }
   }
   const showsToday = now >= range.from && now < range.to
+  const [installHidden, setInstallHidden] = useState(() => { try { return +(localStorage.getItem(INSTALL_CARD_KEY) || 0) } catch { return 0 } })
+  const showInstallCard = isMobile() && !isInstalled() && !tour && Date.now() - installHidden > 14 * 864e5
+  const cardsRef = useRef(null)
+  const hideInstallCard = () => { const t = Date.now(); setInstallHidden(t); try { localStorage.setItem(INSTALL_CARD_KEY, String(t)) } catch { /* ignore */ } }
   const [wrapSeen, setWrapSeen] = useState(() => { try { return localStorage.getItem('klander:wrapped-seen') || '' } catch { return '' } })
   const wrapKey = wrappedSeason(now) && data.events.length >= 5 && wrapSeen !== termOf(now).key ? termOf(now).key : null
+  // A new card at the front shouldn't leave the row scrolled to the middle
+  useEffect(() => { if (cardsRef.current) cardsRef.current.scrollLeft = 0 }, [showInstallCard, wrapKey])
   // One slim, swipeable row of "today" cards: countdowns, friends looking for plans, birthdays
   const cards = [
+    ...(showInstallCard ? [(
+      <div key="install" className="card install-card">
+        <button className="card-main" onClick={() => setSheet('install')}><span className="otd-ic">+</span><span><b>Add to Home Screen</b></span></button>
+        <button className="card-x" aria-label="Not now" onClick={hideInstallCard}>×</button>
+      </div>)] : []),
     ...(wrapKey ? [(
       <button key="wrapped" className="card week-ready" onClick={() => { setSheet('wrapped'); try { localStorage.setItem('klander:wrapped-seen', wrapKey) } catch { /* ignore */ } setWrapSeen(wrapKey) }}>
         <span className="otd-ic">W</span><span>Your <b>{termOf(now).short.toLowerCase()} Wrapped</b> is ready</span>
@@ -392,7 +405,7 @@ export default function CalendarApp({ data, user }) {
           })}
           {f.friends.length === 0 && <button className="group-pill" onClick={openFriends}>+ Add friends</button>}
         </div>
-        {cards.length > 0 && <div className="cards">{cards}</div>}
+        {cards.length > 0 && <div className="cards" ref={cardsRef}>{cards}</div>}
       </header>
 
       <main className="main">
@@ -468,11 +481,11 @@ export default function CalendarApp({ data, user }) {
         onClose={(msg, undoFn) => { setEditing(null); if (undoFn) setUndo({ msg, fn: undoFn }); else if (msg) setToast(msg) }} />}
       {sheet === 'plans' && <PlansSheet uid={user.id} me={data} plans={pl} social={so} friendLinks={f.friends} plansWith={plansWith} onOpenPoll={id => setPollView({ id })} people={f.people} friends={f.friends.map(x => x.person)} busyMap={busyMap}
         initial={planInit} onPlan={startPlan} onClose={() => setSheet(null)} onOpenInvite={i => setInviteView(i)} />}
-      {sheet === 'notify' && <NotificationsSheet n={nt} people={f.people} friends={f.friends.map(x => x.person)} onClose={() => setSheet(null)} onOpen={openUrl} />}
+      {sheet === 'notify' && <NotificationsSheet n={nt} people={f.people} friends={f.friends.map(x => x.person)} onClose={() => setSheet(null)} onOpen={openUrl} onInstall={() => setSheet('install')} />}
       {pollView && so.polls.find(q => q.id === pollView.id) && <PollSheet poll={so.polls.find(q => q.id === pollView.id)} social={so} uid={user.id} me={p} people={f.people} onDecide={decidePoll} onClose={() => setPollView(null)} />}
       {inviteView && <InviteSheet invite={inviteView} plans={pl} people={f.people} me={p} uid={user.id} onClose={() => setInviteView(null)} onChat={() => startChatWith(() => ch.eventThread(inviteView.id))} />}
       {viewing && <FriendEventSheet occ={viewing} uid={user.id} me={p} people={f.people} onClose={() => setViewing(null)} />}
-      {sheet === 'settings' && <Settings data={data} bd={bd} onClose={() => setSheet(null)} onOpenCalendars={() => setSheet('calendars')} onOpenAppearance={() => setSheet('appearance')} onOpenHelp={() => setSheet('help')} />}
+      {sheet === 'settings' && <Settings data={data} bd={bd} onClose={() => setSheet(null)} onOpenCalendars={() => setSheet('calendars')} onOpenAppearance={() => setSheet('appearance')} onOpenHelp={() => setSheet('help')} onOpenInstall={() => setSheet('install')} />}
       {sheet === 'appearance' && <AppearanceSheet data={data} onClose={() => setSheet(null)} />}
       {bdayView && <BirthdaySheet occ={bdayView} onClose={() => setBdayView(null)}
         onPlan={bdayView.birthday.me ? null : () => openPlans({ tab: 'find', hide: [bdayView.birthday.id], with: f.friends.map(x => x.person.id).filter(id => id !== bdayView.birthday.id).slice(0, 4), title: `${bdayView.birthday.short}'s birthday`, window: 'eve', days: 14 })} />}
@@ -501,6 +514,7 @@ export default function CalendarApp({ data, user }) {
       })()}
       {sheet === 'change' && <ChangeSheet data={data} onClose={() => setSheet(null)} onDone={(msg, undoFn) => { setSheet(null); if (undoFn) setUndo({ msg, fn: undoFn }); else setToast(msg) }} />}
       {(sheet === 'insights' || sheet === 'wrapped') && <InsightsSheet uid={user.id} me={p} data={data} goingPlans={goingPlans} guests={pl.guests} people={f.people} startWrapped={sheet === 'wrapped'} onClose={() => setSheet(null)} onPerson={person => { setSheet(null); setCard(person) }} />}
+      {sheet === 'install' && <InstallSheet onClose={() => setSheet(null)} />}
       {sheet === 'help' && <HelpSheet onClose={() => setSheet(null)} onShow={showMe} onTour={() => { setSheet(null); setTour(true) }} />}
       {tour && !editing && <WelcomeTour onDone={doneTour} />}
       {sheet === 'chat' && <ChatScreen chats={ch} uid={user.id} me={p} people={f.people} friends={f.friends.map(x => x.person)} initialId={chatOpen} upcoming={upcoming}

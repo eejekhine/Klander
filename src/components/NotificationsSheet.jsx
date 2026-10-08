@@ -14,7 +14,7 @@ const KINDS = [
 ]
 const first = p => (p?.display_name || p?.username || '').split(/\s+/)[0]
 
-export default function NotificationsSheet({ n, people, friends, onClose, onOpen }) {
+export default function NotificationsSheet({ n, people, friends, onClose, onOpen, onInstall }) {
   const [busy, setBusy] = useState('')
   const [msg, setMsg] = useState('')
   const [error, setError] = useState('')
@@ -50,6 +50,7 @@ export default function NotificationsSheet({ n, people, friends, onClose, onOpen
               <li>Open Klander from your Home Screen and come back here.</li>
             </ol>
             <p className="small muted" style={{ margin: 0 }}>Apple only allows notifications for web apps that are on your Home Screen.</p>
+            {onInstall && <button className="btn primary block" onClick={onInstall}>Show me how, with pictures</button>}
           </>
         ) : support === 'unsupported' ? (
           <p className="small muted" style={{ margin: 0 }}>This browser can't show notifications. Try Klander on your phone from the Home Screen.</p>
