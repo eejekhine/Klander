@@ -20,7 +20,12 @@ export const HELP = [
       { id: 'privacy', title: 'Who can see an event', body: 'Friends see everything, Close shows details only to close friends, Busy only shows that you are busy, and Private is just for you.' },
       { id: 'countdown', title: 'Count down to something', body: 'Turn on "Count down to it" in an event and a "12 days to go" card shows at the top.' },
       { id: 'remind', title: 'Reminders', body: 'Pick a reminder in each event, or set a default under the bell.' },
-      { id: 'links', title: 'Bring in your uni timetable or other calendars', body: 'Your photo (top right) → Linked calendars. Paste a calendar link from uni, Google, Outlook or iCloud and it keeps itself up to date.', show: 'calendars' }
+      { id: 'change', title: 'Change an event by typing', body: 'Tap +, then Change an event, and type something like "move gym to 7" or "cancel dentist". You see the change before it happens.', show: 'change' },
+      { id: 'undo', title: 'Undo a delete', body: 'After deleting an event, tap Undo on the message at the bottom (you have about 6 seconds).' },
+      { id: 'clash', title: 'Clash warnings', body: 'If a new time overlaps something else (or your sleep after a shift), Klander tells you before saving. Tap Save anyway if that\'s fine.' },
+      { id: 'shift', title: 'Night shifts and sleep', body: 'In Settings → Categories, edit your work category and turn on "These are shifts". Klander adds a sleep block after each shift, and the free-time finder won\'t suggest those times.', show: 'settings' },
+      { id: 'links', title: 'Bring in your uni timetable or other calendars', body: 'Your photo (top right) → Linked calendars. Paste a calendar link from uni, Google, Outlook or iCloud and it keeps itself up to date.', show: 'calendars' },
+      { id: 'family', title: 'Share your week with family', body: 'Your photo → Linked calendars → Family link. Send it to a parent and they can follow your week in Apple Calendar. They see "Busy" for busy-only things and never anything Private.', show: 'calendars' },
     ]
   },
   {
@@ -61,7 +66,8 @@ export const HELP = [
     group: 'Notifications',
     items: [
       { id: 'push', title: 'Turn on notifications', body: 'Tap the bell, then Turn on notifications. On iPhone, Klander must be on your Home Screen first.', show: 'notify' },
-      { id: 'quiet', title: 'Quiet hours and muting', body: 'Under the bell, set quiet hours (friend alerts wait until you are awake) and mute any friend. Your own reminders still come through.', show: 'notify' }
+      { id: 'quiet', title: 'Quiet hours and muting', body: 'Under the bell, set quiet hours (friend alerts wait until you are awake) and mute any friend. Your own reminders still come through.', show: 'notify' },
+      { id: 'brief', title: 'Morning brief', body: 'Under the bell, turn on Morning brief to get a summary of your day, birthdays and who\'s free tonight at a time you choose.', show: 'notify' },
     ]
   },
   {

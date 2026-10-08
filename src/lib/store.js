@@ -66,7 +66,7 @@ export function useKlanderData(user) {
 
   /* ---------- categories ---------- */
   const saveCategory = async cat => {
-    const row = { name: cat.name, colour: cat.colour, sort: cat.sort ?? categories.length, user_id: uid }
+    const row = { name: cat.name, colour: cat.colour, sort: cat.sort ?? categories.length, user_id: uid, is_shift: !!cat.is_shift, default_reminder: cat.default_reminder ?? null }
     const q = cat.id
       ? supabase.from('categories').update(row).eq('id', cat.id).select().single()
       : supabase.from('categories').insert(row).select().single()
@@ -98,9 +98,21 @@ export function useKlanderData(user) {
     return data
   }
   const deleteEvent = async id => {
+    const gone = events.find(e => e.id === id)
+    const { data: guests } = await supabase.from('event_invites').select('user_id, status').eq('event_id', id)
     const { error } = await supabase.from('events').delete().eq('id', id)
     if (error) throw friendly(error)
     setEvents(es => es.filter(e => e.id !== id))
+    return gone ? { ...gone, _guests: guests || [] } : null
+  }
+  /** Put back an event you just deleted (same id, so links and chats still point at it). Guests are re-invited. */
+  const restoreEvent = async ev => {
+    const { _guests, created_at: _c, updated_at: _u, ...row } = ev
+    const { data, error } = await supabase.from('events').insert(row).select().single()
+    if (error) throw friendly(error)
+    if (_guests?.length) await supabase.from('event_invites').insert(_guests.map(g => ({ event_id: data.id, user_id: g.user_id })))
+    setEvents(es => [...es, data])
+    return data
   }
   /** Skip a single occurrence of a repeating event. */
   const skipOccurrence = async (ev, occurrence) => {
@@ -113,7 +125,7 @@ export function useKlanderData(user) {
 
   return {
     profile, categories, events, loading, online, error, refresh,
-    updateProfile, uploadAvatar, saveCategory, deleteCategory, saveEvent, deleteEvent, skipOccurrence
+    updateProfile, uploadAvatar, saveCategory, deleteCategory, saveEvent, deleteEvent, restoreEvent, skipOccurrence
   }
 }
 

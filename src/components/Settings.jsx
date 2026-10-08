@@ -4,6 +4,7 @@ import { supabase } from '../lib/supabase'
 import { PALETTE, initials } from '../lib/colours'
 import { themeName, useThemeState } from '../lib/themes'
 import BirthdayFields from './BirthdayFields'
+import { REMINDERS } from '../lib/notify'
 
 export default function Settings({ data, bd, onClose, onOpenCalendars, onOpenAppearance, onOpenHelp }) {
   const theme = useThemeState()
@@ -117,7 +118,7 @@ function Categories({ data }) {
       {data.categories.map(c => editing?.id === c.id ? null : (
         <div key={c.id} className="cat-row">
           <span className="cat-dot" style={{ '--c': c.colour }} />
-          <span>{c.name}</span>
+          <span>{c.name}{c.is_shift && <small className="muted"> · shifts</small>}</span>
           {confirmId === c.id
             ? <span className="row"><button className="btn danger" style={{ padding: '6px 10px' }} onClick={() => remove(c.id)}>Delete</button><button className="btn ghost" style={{ padding: '6px 8px' }} onClick={() => setConfirmId(null)}>Keep</button></span>
             : <span className="row"><button className="linklike small" onClick={() => setEditing({ ...c })}>Edit</button><button className="linklike small" style={{ color: 'var(--danger)' }} onClick={() => setConfirmId(c.id)}>Delete</button></span>}
@@ -127,11 +128,27 @@ function Categories({ data }) {
         <div className="group" style={{ background: 'var(--bg)' }}>
           <input id="cat-name" className="input" value={editing.name} onChange={e => setEditing({ ...editing, name: e.target.value })} placeholder="Category name" maxLength={30} autoFocus />
           <div className="swatches">{PALETTE.map(col => <button key={col} type="button" className="swatch" style={{ background: col }} aria-pressed={editing.colour === col} aria-label={`Colour ${col}`} onClick={() => setEditing({ ...editing, colour: col })} />)}</div>
+          <div className="toggle-row"><span>These are shifts<br /><small className="muted">Adds a sleep block after each one. Free-time finder and quiet hours respect it.</small></span>
+            <label className="switch"><input type="checkbox" checked={!!editing.is_shift} onChange={e => setEditing({ ...editing, is_shift: e.target.checked })} aria-label="These are shifts" /><span /></label>
+          </div>
+          <label className="field"><span>Reminder for this category</span>
+            <select className="input" value={editing.default_reminder ?? ''} onChange={e => setEditing({ ...editing, default_reminder: e.target.value === '' ? null : +e.target.value })}>
+              <option value="">Use my default</option><option value="-1">No reminders</option>
+              {REMINDERS.filter(([v]) => v !== null).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+            </select>
+          </label>
           <div className="row"><button className="btn primary" onClick={save}>Save category</button><button className="btn ghost" onClick={() => setEditing(null)}>Cancel</button></div>
         </div>
       )}
       {error && <p className="error">{error}</p>}
       {!editing && <button className="btn block" onClick={() => setEditing({ name: '', colour: PALETTE[data.categories.length % PALETTE.length] })}>+ Add category</button>}
+      {data.categories.some(c => c.is_shift) && (
+        <label className="field"><span>Sleep after a shift</span>
+          <select className="input" value={String(data.profile.sleep_hours ?? 7)} onChange={e => data.updateProfile({ sleep_hours: +e.target.value }).catch(err => setError(err.message))}>
+            {[0, 4, 5, 6, 7, 8, 9, 10].map(h => <option key={h} value={String(h)}>{h ? `${h} hours` : 'No sleep block'}</option>)}
+          </select>
+        </label>
+      )}
     </div>
   )
 }

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { addDays, addMinutes, differenceInMinutes, format, parse } from 'date-fns'
 import Sheet from './Sheet'
 import { Avatar } from './FriendsSheet'
@@ -18,7 +18,7 @@ const VIS = [
   ['private', 'Private', 'Only you can see it']
 ]
 
-export default function EventEditor({ data, event, occurrence, start, end, title: title0, invite = [], hide = [], friends = [], groups = [], plans, onClose, onChat, uid, people = {} }) {
+export default function EventEditor({ data, event, occurrence, start, end, title: title0, invite = [], hide = [], friends = [], groups = [], plans, onClose, onChat, uid, people = {}, clashesFor }) {
   const isNew = !event
   const s0 = event ? new Date(event.starts_at) : start
   const e0 = event ? new Date(event.ends_at) : end || addMinutes(start, 60)
@@ -46,6 +46,8 @@ export default function EventEditor({ data, event, occurrence, start, end, title
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [confirmDelete, setConfirmDelete] = useState(false)
+  const [clash, setClash] = useState(null) // list of overlapping things; saving again means 'save anyway'
+  useEffect(() => { setClash(null) }, [sDate, sTime, eDate, eTime, allDay]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Moving the start keeps the event's length the same.
   const changeStart = (date, time) => {
@@ -70,6 +72,11 @@ export default function EventEditor({ data, event, occurrence, start, end, title
     if (e <= s) return setError('The end needs to be after the start.')
     if (repeat !== 'none' && until && join(until) < startOfDay(s)) return setError('"Repeat until" is before the event starts.')
     if (invitees.some(id => hiddenFrom.includes(id))) return setError("You can't invite someone you're hiding it from.")
+    // Clash check (once): warn if this overlaps something else of yours, then let them save anyway
+    if (!allDay && clashesFor && !clash) {
+      const hits = clashesFor(s, e, event?.id)
+      if (hits.length) { setClash(hits); return }
+    }
     const rrule = repeat === 'custom' ? event.rrule : buildRRule(repeat, s, until || null)
     setBusy(true)
     try {
@@ -86,9 +93,14 @@ export default function EventEditor({ data, event, occurrence, start, end, title
   const remove = async mode => {
     setBusy(true); setError('')
     try {
-      if (mode === 'one') await data.skipOccurrence(event, occurrence)
-      else await data.deleteEvent(event.id)
-      onClose()
+      if (mode === 'one') {
+        const before = event.exdates || []
+        await data.skipOccurrence(event, occurrence)
+        onClose(`Deleted ${fmt(occurrence, 'EEE d MMM')}`, () => data.saveEvent({ ...event, exdates: before }))
+      } else {
+        const gone = await data.deleteEvent(event.id)
+        onClose(`Deleted "${event.title}"`, gone ? () => data.restoreEvent(gone) : null)
+      }
     } catch (err) { setError(err.message); setBusy(false) }
   }
 
@@ -208,6 +220,15 @@ export default function EventEditor({ data, event, occurrence, start, end, title
       {!isNew && <EventPhotos eventId={event.id} uid={uid} canAdd isHost people={people} me={data.profile} takenAt={occurrence || (new Date(event.ends_at) < new Date() ? new Date(event.starts_at) : null)} />}
 
       {error && <p className="error" role="alert">{error}</p>}
+      {clash && (
+        <div className="clash" role="alert">
+          <b>This overlaps {clash.slice(0, 2).map(c => `${c.title} (${fmt(c.start, 'HH:mm')}–${fmt(c.end, 'HH:mm')})`).join(' and ')}{clash.length > 2 ? ` and ${clash.length - 2} more` : ''}.</b>
+          <div className="row">
+            <button className="btn primary grow" onClick={save}>Save anyway</button>
+            <button className="btn grow" onClick={() => setClash(null)}>Change time</button>
+          </div>
+        </div>
+      )}
 
       {!isNew && (
         !confirmDelete

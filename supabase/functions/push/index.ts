@@ -17,7 +17,7 @@ const cors = {
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { ...cors, 'Content-Type': 'application/json' } })
 const admin = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!, { auth: { persistSession: false } })
-const SOCIAL = new Set(['friend_event', 'invite', 'rsvp', 'broadcast', 'broadcast_reply', 'request', 'accepted', 'poll', 'poll_vote', 'message'])
+const SOCIAL = new Set(['friend_event', 'invite', 'rsvp', 'broadcast', 'broadcast_reply', 'request', 'accepted', 'poll', 'poll_vote', 'message', 'week', 'week_reaction'])
 
 /* ---------- VAPID keys: made once, kept in the database ---------- */
 async function vapid() {
@@ -61,14 +61,14 @@ const hhmm = (d: Date, tz: string) => new Intl.DateTimeFormat('en-GB', { timeZon
 const before = (m: number) => (m === 0 ? 'Starting now' : m < 60 ? `In ${m} minutes` : m < 1440 ? `In ${m / 60} hour${m === 60 ? '' : 's'}` : `In ${m / 1440} day${m === 1440 ? '' : 's'}`)
 
 /* ---------- reminders ---------- */
-type Ev = { id: string; owner_id: string; title: string; location: string | null; starts_at: string; ends_at: string; rrule: string | null; exdates: string[] | null; remind_minutes: number | null }
+type Ev = { id: string; owner_id: string; title: string; location: string | null; starts_at: string; ends_at: string; rrule: string | null; exdates: string[] | null; remind_minutes: number | null; category_id?: string | null; all_day?: boolean; visibility?: string }
 function nextStarts(e: Ev, tz: string, from: Date, to: Date): Date[] {
   const start = new Date(e.starts_at)
   if (!e.rrule) return start >= from && start < to ? [start] : []
   try {
     const rule = new RRule({ ...RRule.parseString(e.rrule), dtstart: floating(start, tz) })
     const ex = new Set((e.exdates || []).map(x => new Date(x).getTime()))
-    return rule.between(floating(from, tz), floating(to, tz), true).map(f => fromFloating(f, tz)).filter(s => !ex.has(s.getTime()) && s >= from && s < to)
+    return rule.between(floating(from, tz), floating(to, tz), true).map((f: Date) => fromFloating(f, tz)).filter((s: Date) => !ex.has(s.getTime()) && s >= from && s < to)
   } catch { return [] }
 }
 
@@ -78,7 +78,9 @@ async function makeReminders(now: Date) {
   const { data: profiles } = await admin.from('profiles').select('id, timezone')
   const tzOf = new Map((profiles || []).map(p => [p.id, p.timezone || 'Europe/London']))
   const soon = new Date(now.getTime() + 8 * 864e5).toISOString()
-  const cols = 'id, owner_id, title, location, starts_at, ends_at, rrule, exdates, remind_minutes'
+  const { data: cats } = await admin.from('categories').select('id, default_reminder')
+  const catRem = new Map((cats || []).map(c => [c.id, c.default_reminder]))
+  const cols = 'id, owner_id, title, location, starts_at, ends_at, rrule, exdates, remind_minutes, category_id'
   const { data: own } = await admin.from('events').select(cols).eq('all_day', false).is('source_id', null)
     .or(`rrule.not.is.null,and(starts_at.gt.${now.toISOString()},starts_at.lt.${soon})`)
   const { data: going } = await admin.from('event_invites').select(`user_id, events(${cols})`).eq('status', 'going')
@@ -86,7 +88,7 @@ async function makeReminders(now: Date) {
   for (const e of (own || []) as Ev[]) {
     const s = sMap.get(e.owner_id)
     if (s && !s.reminders) continue
-    const mins = e.remind_minutes ?? s?.default_reminder ?? null
+    const mins = e.remind_minutes ?? (e.category_id ? catRem.get(e.category_id) : null) ?? s?.default_reminder ?? null
     if (mins == null || mins < 0) continue
     jobs.push({ user: e.owner_id, e, mins })
   }
@@ -105,12 +107,111 @@ async function makeReminders(now: Date) {
       rows.push({
         user_id: j.user, kind: 'reminder', title: j.e.title,
         body: `${before(j.mins)} · ${hhmm(s, tz)}${j.e.location ? ` · ${j.e.location}` : ''}`,
-        url: '/', ref: `${j.e.id}:${s.toISOString()}:${j.mins}`
+        url: '/', ref: `${j.e.id}:${s.toISOString()}:${j.mins}`, dedupe_key: `rem:${j.user}:${j.e.id}:${s.toISOString()}:${j.mins}`
       })
     }
   }
-  if (rows.length) await admin.from('notifications').upsert(rows, { onConflict: 'user_id,ref', ignoreDuplicates: true })
+  if (rows.length) await admin.from('notifications').upsert(rows, { onConflict: 'dedupe_key', ignoreDuplicates: true })
   return rows.length
+}
+
+/* ---------- shifts + sleep ---------- */
+/** Users who are asleep after a shift right now (for quiet hours that follow sleep). */
+async function sleepingNow(users: string[], now: Date, tzOf: Map<string, string>) {
+  if (!users.length) return new Set<string>()
+  const [{ data: cats }, { data: profs }] = await Promise.all([
+    admin.from('categories').select('id, user_id').eq('is_shift', true).in('user_id', users),
+    admin.from('profiles').select('id, sleep_hours').in('id', users)
+  ])
+  const asleep = new Set<string>()
+  if (!cats?.length) return asleep
+  const sleepH = new Map((profs || []).map(p => [p.id, Number(p.sleep_hours) || 7]))
+  const { data: evs } = await admin.from('events').select('id, owner_id, starts_at, ends_at, rrule, exdates').in('category_id', cats.map(c => c.id))
+  for (const e of (evs || []) as Ev[]) {
+    const tz = tzOf.get(e.owner_id) || 'Europe/London'
+    const dur = new Date(e.ends_at).getTime() - new Date(e.starts_at).getTime()
+    const h = sleepH.get(e.owner_id) || 7
+    for (const st of nextStarts(e, tz, new Date(now.getTime() - dur - h * 3600e3 - 864e5), now)) {
+      const end = st.getTime() + dur
+      if (now.getTime() >= end && now.getTime() < end + h * 3600e3) asleep.add(e.owner_id)
+    }
+  }
+  return asleep
+}
+
+/* ---------- morning brief ---------- */
+// Uni timetables have long titles like "Lecture, Module name 12384-2610, Lecturer": keep the useful bit
+const short = (t: string) => t.replace(/\s+\d{4,}-\d{3,}.*$/, '').split(',').slice(0, 2).join(',').trim().slice(0, 34)
+const dayKey = (d: Date, tz: string) => new Intl.DateTimeFormat('en-CA', { timeZone: tz }).format(d)
+async function makeBriefs(now: Date) {
+  const { data: subs } = await admin.from('notify_settings').select('user_id, brief_time').eq('morning_brief', true)
+  if (!subs?.length) return 0
+  const users = subs.map(s => s.user_id)
+  const { data: profs } = await admin.from('profiles').select('id, timezone').in('id', users)
+  const tzOf = new Map((profs || []).map(p => [p.id, p.timezone || 'Europe/London']))
+  const due = subs.filter(s => {
+    const tz = tzOf.get(s.user_id) || 'Europe/London'
+    const m = minutesOfDay(now, tz), b = +s.brief_time.slice(0, 2) * 60 + +s.brief_time.slice(3, 5)
+    return m >= b && m < b + 10
+  })
+  let made = 0
+  for (const s of due) {
+    const uid = s.user_id, tz = tzOf.get(uid) || 'Europe/London'
+    const key = dayKey(now, tz)
+    const dedupe = `brief:${uid}:${key}`
+    const { count } = await admin.from('notifications').select('id', { count: 'exact', head: true }).eq('dedupe_key', dedupe)
+    if (count) continue
+    // today's window in the user's time zone
+    const startW = fromFloating(new Date(Date.UTC(+key.slice(0, 4), +key.slice(5, 7) - 1, +key.slice(8, 10))), tz)
+    const endW = new Date(startW.getTime() + 864e5)
+    const cols = 'id, owner_id, title, location, starts_at, ends_at, rrule, exdates, remind_minutes, all_day'
+    const [{ data: mine }, { data: going }, { data: links }] = await Promise.all([
+      admin.from('events').select(cols).eq('owner_id', uid).or(`rrule.not.is.null,and(starts_at.lt.${endW.toISOString()},ends_at.gt.${startW.toISOString()})`),
+      admin.from('event_invites').select(`events(${cols})`).eq('user_id', uid).eq('status', 'going'),
+      admin.from('friendships').select('requester, addressee').eq('status', 'accepted').or(`requester.eq.${uid},addressee.eq.${uid}`)
+    ])
+    const evs = [...(mine || []), ...((going || []) as unknown as { events: Ev }[]).map(g => g.events).filter(Boolean)] as Ev[]
+    const today: { t: Date; title: string; allDay: boolean }[] = []
+    for (const e of evs) {
+      const dur = new Date(e.ends_at).getTime() - new Date(e.starts_at).getTime()
+      for (const st of nextStarts(e, tz, new Date(startW.getTime() - (e.all_day ? 0 : dur)), endW)) {
+        if (st.getTime() + dur > startW.getTime()) today.push({ t: st, title: e.title, allDay: !!e.all_day })
+      }
+    }
+    today.sort((a, b) => a.t.getTime() - b.t.getTime())
+    const friends = (links || []).map(l => (l.requester === uid ? l.addressee : l.requester))
+    // birthdays today
+    let bdays: string[] = []
+    if (friends.length) {
+      const { data: b } = await admin.from('birthdays').select('user_id, birthday').in('user_id', friends)
+      const md = key.slice(5)
+      const ids = (b || []).filter(x => x.birthday.slice(5) === md).map(x => x.user_id)
+      if (ids.length) { const { data: ps } = await admin.from('profiles').select('display_name, username').in('id', ids); bdays = (ps || []).map(p => (p.display_name || p.username).split(' ')[0]) }
+    }
+    // friends free this evening (18:00–23:00, nothing on)
+    let free: string[] = []
+    if (friends.length) {
+      const eveS = new Date(startW.getTime() + 18 * 3600e3), eveE = new Date(startW.getTime() + 23 * 3600e3)
+      const { data: fe } = await admin.from('events').select(cols).in('owner_id', friends).eq('all_day', false).or(`rrule.not.is.null,and(starts_at.lt.${eveE.toISOString()},ends_at.gt.${eveS.toISOString()})`)
+      const busy = new Set<string>()
+      for (const e of (fe || []) as Ev[]) {
+        const dur = new Date(e.ends_at).getTime() - new Date(e.starts_at).getTime()
+        if (nextStarts(e, tz, new Date(eveS.getTime() - dur), eveE).some(st => st.getTime() + dur > eveS.getTime())) busy.add(e.owner_id)
+      }
+      const freeIds = friends.filter(f => !busy.has(f)).slice(0, 4)
+      if (freeIds.length) { const { data: ps } = await admin.from('profiles').select('display_name, username').in('id', freeIds); free = (ps || []).map(p => (p.display_name || p.username).split(' ')[0]) }
+    }
+    const timed = today.filter(x => !x.allDay)
+    const parts = [
+      timed.length ? `${timed.length} ${timed.length === 1 ? 'thing' : 'things'} today: ${timed.slice(0, 3).map(x => `${short(x.title)} ${hhmm(x.t, tz)}`).join(', ')}${timed.length > 3 ? '…' : ''}` : 'Nothing booked today',
+      ...today.filter(x => x.allDay).slice(0, 2).map(x => short(x.title)),
+      ...(bdays.length ? [`🎂 ${bdays.join(', ')}'s birthday`] : []),
+      ...(free.length ? [`Free tonight: ${free.join(', ')}`] : [])
+    ]
+    const { error } = await admin.from('notifications').insert({ user_id: uid, kind: 'brief', title: 'Your day', body: parts.join(' · ').slice(0, 300), url: '/', dedupe_key: dedupe, ref: key })
+    if (!error) made++
+  }
+  return made
 }
 
 /* ---------- sending ---------- */
@@ -122,18 +223,19 @@ async function sendDue(now: Date, onlyUser?: string) {
   const users = [...new Set(due.map(n => n.user_id))]
   const [{ data: subs }, { data: settings }, { data: profiles }] = await Promise.all([
     admin.from('push_subscriptions').select('id, user_id, endpoint, p256dh, auth').in('user_id', users),
-    admin.from('notify_settings').select('user_id, quiet_start, quiet_end').in('user_id', users),
+    admin.from('notify_settings').select('user_id, quiet_start, quiet_end, quiet_follow_sleep').in('user_id', users),
     admin.from('profiles').select('id, timezone').in('id', users)
   ])
   const sMap = new Map((settings || []).map(s => [s.user_id, s]))
   const tzOf = new Map((profiles || []).map(p => [p.id, p.timezone || 'Europe/London']))
+  const asleep = await sleepingNow((settings || []).filter(x => x.quiet_follow_sleep).map(x => x.user_id), now, tzOf)
   let sent = 0, quiet = 0, failed = 0
   const dead = new Set<string>(), okSubs = new Set<string>()
   for (const n of due) {
     const tz = tzOf.get(n.user_id) || 'Europe/London'
     const mine = (subs || []).filter(s => s.user_id === n.user_id)
     const stale = n.kind !== 'reminder' && now.getTime() - new Date(n.created_at).getTime() > 6 * 3600e3
-    if (!mine.length || stale || (SOCIAL.has(n.kind) && inQuiet(sMap.get(n.user_id), tz, now))) {
+    if (!mine.length || stale || (SOCIAL.has(n.kind) && (inQuiet(sMap.get(n.user_id), tz, now) || asleep.has(n.user_id)))) {
       if (mine.length && !stale) quiet++
       await admin.from('notifications').update({ sent_at: now.toISOString(), pushed: false }).eq('id', n.id)
       continue
@@ -169,9 +271,10 @@ Deno.serve(async req => {
     if (!ok) return json({ error: 'Bad secret' }, 401)
     await vapid()
     const reminders = await makeReminders(now)
+    const briefs = await makeBriefs(now).catch(e => { console.error('brief', e); return 0 })
     const result = await sendDue(now)
     if (now.getUTCMinutes() === 0) await admin.from('notifications').delete().lt('created_at', new Date(now.getTime() - 30 * 864e5).toISOString())
-    return json({ reminders, ...result })
+    return json({ reminders, briefs, ...result })
   }
   // Signed-in user: send yourself a test notification
   const jwt = (req.headers.get('Authorization') || '').replace(/^Bearer\s+/i, '')

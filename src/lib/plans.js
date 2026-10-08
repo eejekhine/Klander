@@ -16,13 +16,13 @@ export function usePlans(uid) {
       supabase.from('event_invites').select('event_id, user_id, status, responded_at').neq('user_id', uid),
       supabase.from('broadcasts').select('id, user_id, message, starts_at, ends_at, created_at').gt('ends_at', nowIso).order('created_at', { ascending: false }),
       supabase.from('broadcast_replies').select('broadcast_id, user_id, reply, created_at'),
-      supabase.rpc('friend_busy')
+      supabase.rpc('friend_busy_v2')
     ])
-    if (!inv.error) setInvites(inv.data || [])
+    if (!inv.error) setInvites(Array.isArray(inv.data) ? inv.data : [])
     if (!gst.error) setGuests(gst.data || [])
     if (!bc.error) setBroadcasts(bc.data || [])
     if (!rp.error) setReplies(rp.data || [])
-    if (!fb.error) setBusy(fb.data || [])
+    if (!fb.error) setBusy(Array.isArray(fb.data) ? fb.data : [])
   }, [uid])
 
   useEffect(() => {

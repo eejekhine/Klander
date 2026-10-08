@@ -92,3 +92,32 @@ export async function aiTheme(vibe) {
     radius: Number.isFinite(t.radius) ? Math.max(0, Math.min(16, Math.round(t.radius))) : 8
   }
 }
+
+/** "move gym to 7": ask the AI which upcoming event you mean and what to change. */
+export async function editWithAI(text, events) {
+  const { data, error } = await supabase.functions.invoke('smart-add', {
+    body: {
+      mode: 'edit', text,
+      now: fmt(new Date(), "EEEE d MMMM yyyy, HH:mm"),
+      tz: Intl.DateTimeFormat().resolvedOptions().timeZone || 'Europe/London',
+      events: events.map((o, i) => ({ i, title: o.title, start: fmt(o.start, 'EEE d MMM yyyy HH:mm'), end: fmt(o.end, 'EEE d MMM HH:mm'), location: o.location || '' }))
+    }
+  })
+  if (error) {
+    let msg = "Couldn't reach smart add. Check your connection."
+    try { msg = (await error.context.json()).error || msg } catch { /* keep */ }
+    throw new Error(msg)
+  }
+  return data
+}
+
+/** Work out the new start/end for a proposed change to one occurrence. */
+export function applyChange(occ, c) {
+  const dur = occ.end - occ.start
+  const date = c.date || fmt(occ.start, 'yyyy-MM-dd')
+  const start = c.start_time ? at(date, c.start_time) : c.date ? at(date, fmt(occ.start, 'HH:mm')) : occ.start
+  let end
+  if (c.end_time) { end = at(date, c.end_time); if (end <= start) end = addDays(end, 1) }
+  else end = new Date(start.getTime() + dur)
+  return { start, end, title: c.title || occ.title, location: c.location ?? occ.location ?? '' }
+}

@@ -1,6 +1,6 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import Sheet from './Sheet'
-import { ago, getFeedLinks } from '../lib/sync'
+import { ago, familyLinkOn, getFamilyLink, getFeedLinks, stopFamilyLink } from '../lib/sync'
 
 const VIS = [['friends', 'Friends'], ['busy', 'Busy only'], ['private', 'Private']]
 
@@ -127,6 +127,40 @@ export default function CalendarsSheet({ data, cal, onClose }) {
               <button className="linklike small" style={{ justifySelf: 'start' }} onClick={() => run('feed', async () => { setLinks(await getFeedLinks(true)); setMsg('New link made. The old one no longer works.') })}>Make a new link (stops the old one working)</button>
             </>}
       </div>
+
+      <FamilyLink copy={copy} />
     </Sheet>
+  )
+}
+
+/** A separate link for family (e.g. a parent on Apple Calendar): your week, without the private stuff. */
+function FamilyLink({ copy }) {
+  const [on, setOn] = useState(null)
+  const [link, setLink] = useState(null)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  useEffect(() => { familyLinkOn().then(setOn).catch(() => setOn(false)) }, [])
+  const run = async fn => { setBusy(true); setError(''); try { await fn() } catch (e) { setError(e.message) } finally { setBusy(false) } }
+  const share = async () => {
+    if (navigator.share) { try { await navigator.share({ title: 'My calendar', text: 'Tap to add my calendar to yours (it updates by itself):', url: link.webcal }); return } catch { return } }
+    copy(link.webcal)
+  }
+  return (
+    <div className="group">
+      <h3>Family link</h3>
+      <p className="small muted" style={{ margin: 0 }}>Let family follow your week in their own calendar app (great for Apple Calendar). They see your normal events, "Busy" for busy-only and close-friends events, and never anything Private. They can't see your friends or chats.</p>
+      {on === null ? null : !link
+        ? <button className="btn block" disabled={busy} onClick={() => run(async () => { setLink(await getFamilyLink()); setOn(true) })}>{on ? 'Show my family link' : 'Make a family link'}</button>
+        : <>
+            <button className="btn primary block" onClick={share}>Send it to family</button>
+            <div className="row">
+              <input className="input small grow" readOnly value={link.webcal} onFocus={e => e.target.select()} />
+              <button className="btn" onClick={() => copy(link.webcal)}>Copy</button>
+            </div>
+            <p className="small muted" style={{ margin: 0 }}>On their iPhone: open the link and tap Subscribe. Or in Apple Calendar: File → New Calendar Subscription and paste it.</p>
+            <button className="linklike small danger-text" style={{ justifySelf: 'start' }} disabled={busy} onClick={() => run(async () => { await stopFamilyLink(); setLink(null); setOn(false) })}>Stop sharing (the link stops working)</button>
+          </>}
+      {error && <p className="error" role="alert">{error}</p>}
+    </div>
   )
 }

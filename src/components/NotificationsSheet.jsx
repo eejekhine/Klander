@@ -98,6 +98,19 @@ export default function NotificationsSheet({ n, people, friends, onClose, onOpen
           </div>
 
           <div className="group">
+            <h3>Morning brief</h3>
+            <div className="toggle-row"><span>A summary of your day<br /><small className="muted">What's on, birthdays and who's free tonight</small></span>
+              <label className="switch"><input type="checkbox" checked={!!s.morning_brief} onChange={e => save({ morning_brief: e.target.checked })} aria-label="Morning brief" /><span /></label>
+            </div>
+            {s.morning_brief && (
+              <label className="field"><span>Send it at</span>
+                <input className="input" type="time" value={(s.brief_time || '08:00').slice(0, 5)} onChange={e => e.target.value && save({ brief_time: e.target.value })} />
+              </label>
+            )}
+            {s.morning_brief && <p className="small muted" style={{ margin: 0 }}>Work nights? Set it for when you wake up, like 16:00.</p>}
+          </div>
+
+          <div className="group">
             <h3>Quiet hours</h3>
             <div className="toggle-row"><span>Hold friend alerts while you sleep<br /><small className="muted">They wait in Recent. Your own reminders still come through.</small></span>
               <label className="switch"><input type="checkbox" checked={!!s.quiet_start} onChange={e => save(e.target.checked ? { quiet_start: '23:00', quiet_end: '08:00' } : { quiet_start: null, quiet_end: null })} aria-label="Quiet hours" /><span /></label>
@@ -109,6 +122,9 @@ export default function NotificationsSheet({ n, people, friends, onClose, onOpen
               </div>
             )}
             {s.quiet_start && <p className="small muted" style={{ margin: 0 }}>Work nights? Set it to when you sleep, like 09:00 to 16:00.</p>}
+            <div className="toggle-row"><span>Also be quiet while I sleep after a shift<br /><small className="muted">Uses your shift categories and sleep length from Settings</small></span>
+              <label className="switch"><input type="checkbox" checked={!!s.quiet_follow_sleep} onChange={e => save({ quiet_follow_sleep: e.target.checked })} aria-label="Quiet after shifts" /><span /></label>
+            </div>
           </div>
 
           {friends.length > 0 && (

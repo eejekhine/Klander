@@ -67,6 +67,43 @@ const THEME_RULES = `You design colour themes for a calendar app called Klander.
 - Keep it tasteful and usable for daily use; avoid pure neon on pure white. Dark vibes (night, rain, space) should use a dark bg.
 - Pick the font and event style that best match the vibe. Glow suits neon/night; solid suits bold/sporty; outline suits minimal; filled suits most.`
 
+// "Edit by sentence": pick which of your upcoming events the user means and what to change
+const editSchema = {
+  type: 'OBJECT',
+  properties: {
+    changes: {
+      type: 'ARRAY',
+      items: {
+        type: 'OBJECT',
+        properties: {
+          index: { type: 'INTEGER', description: 'Index of the event in the list' },
+          delete: { type: 'BOOLEAN', description: 'True only if the user clearly wants it cancelled/removed' },
+          title: { type: 'STRING', nullable: true },
+          date: { type: 'STRING', nullable: true, description: 'New start date YYYY-MM-DD if it moves day' },
+          start_time: { type: 'STRING', nullable: true, description: 'New start 24h HH:MM' },
+          end_time: { type: 'STRING', nullable: true, description: 'New end 24h HH:MM' },
+          location: { type: 'STRING', nullable: true }
+        },
+        required: ['index', 'delete']
+      }
+    },
+    message: { type: 'STRING', nullable: true, description: 'One short sentence if it is unclear which event, or nothing matches' }
+  },
+  required: ['changes']
+}
+function editInstructions(now: string, tz: string, list: string) {
+  return `You change events in a UK user's calendar from a short instruction like "move gym to 7" or "cancel dentist" or "push basketball back an hour".
+Right now it is ${now} (time zone ${tz}).
+Their upcoming events (index · title · start → end · location):
+${list}
+Rules:
+- Pick the event(s) the user means. Prefer the next upcoming one with a matching title.
+- Only fill in fields that change. "move to 7" for an evening event means 19:00. Keep the same length unless they say otherwise (then give the new end_time too).
+- "push back an hour" means start and end both one hour later.
+- delete only for clear cancel/remove words.
+- If you can't tell which event, return no changes and ask in "message".`
+}
+
 function instructions(now: string, tz: string) {
   return `You turn messages, posters, screenshots, tickets, timetables and rotas into calendar events for a UK user.
 Right now it is ${now} (time zone ${tz}). Dates are UK style (day before month).
@@ -88,7 +125,7 @@ async function askGemini(key: string, parts: unknown[], responseSchema: unknown 
       headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key },
       body: JSON.stringify({
         contents: [{ role: 'user', parts }],
-        generationConfig: { responseMimeType: 'application/json', responseSchema, temperature: responseSchema === schema ? 0.1 : 0.7 }
+        generationConfig: { responseMimeType: 'application/json', responseSchema, temperature: responseSchema === themeSchema ? 0.7 : 0.1 }
       }),
       signal: AbortSignal.timeout(45000)
     })
@@ -140,17 +177,41 @@ Deno.serve(async req => {
   const key = Deno.env.get('GEMINI_API_KEY')
   if (!key) return json({ error: "Smart add isn't switched on yet (no Gemini API key set in Supabase)." }, 503)
 
-  let body: { text?: string; image?: string; mime?: string; now?: string; tz?: string; mode?: string }
+  let body: { text?: string; image?: string; mime?: string; now?: string; tz?: string; mode?: string; events?: { i: number; title: string; start: string; end: string; location?: string }[] }
   try { body = await req.json() } catch { return json({ error: 'Bad request' }, 400) }
   const text = (body.text || '').trim().slice(0, 4000)
   const image = body.image || ''
   if (!text && !image && body.mode !== 'theme') return json({ error: 'Type something or add a photo.' }, 400)
+  if (body.mode === 'edit' && (!Array.isArray(body.events) || !body.events.length)) return json({ error: "You've got nothing coming up to change." }, 400)
   if (image.length > 7_000_000) return json({ error: 'That image is too big. Try a screenshot or a smaller photo.' }, 413)
   const mime = ['image/jpeg', 'image/png', 'image/webp'].includes(body.mime || '') ? body.mime! : 'image/jpeg'
 
   const since = new Date(Date.now() - 864e5).toISOString()
   const { count } = await admin.from('ai_usage').select('id', { count: 'exact', head: true }).eq('user_id', user.id).gte('created_at', since)
   if ((count || 0) >= DAILY_LIMIT) return json({ error: `You've used all ${DAILY_LIMIT} smart adds for today. Try again tomorrow.` }, 429)
+
+  if (body.mode === 'edit') {
+    const tz = /^[A-Za-z_]+\/[A-Za-z_]+$/.test(body.tz || '') ? body.tz! : 'Europe/London'
+    const now = (body.now || new Date().toISOString()).slice(0, 60)
+    const list = body.events!.slice(0, 60).map(e => `${e.i} · ${String(e.title).slice(0, 80)} · ${String(e.start).slice(0, 30)} → ${String(e.end).slice(0, 30)}${e.location ? ` · ${String(e.location).slice(0, 60)}` : ''}`).join('\n')
+    try {
+      const out = await askGemini(key, [{ text: editInstructions(now, tz, list) }, { text: `Instruction: ${text}` }], editSchema)
+      await admin.from('ai_usage').insert({ user_id: user.id, kind: 'text', ok: true })
+      const changes = (Array.isArray(out?.changes) ? out.changes : []).filter((c: { index: number }) => Number.isInteger(c.index) && body.events!.some(e => e.i === c.index)).slice(0, 5)
+        .map((c: Record<string, unknown>) => ({
+          index: c.index, delete: !!c.delete,
+          title: c.title ? String(c.title).slice(0, 120) : null,
+          date: isDate(c.date) ? c.date : null,
+          start_time: isTime(c.start_time) ? c.start_time : null,
+          end_time: isTime(c.end_time) ? c.end_time : null,
+          location: c.location ? String(c.location).slice(0, 200) : null
+        }))
+      return json({ changes, message: out?.message || (changes.length ? null : "I couldn't tell which event you meant."), remaining: Math.max(0, DAILY_LIMIT - (count || 0) - 1) })
+    } catch (e) {
+      await admin.from('ai_usage').insert({ user_id: user.id, kind: 'text', ok: false })
+      return json({ error: e instanceof Error ? e.message : 'Something went wrong.' }, 502)
+    }
+  }
 
   if (body.mode === 'theme') {
     const vibe = (body.text || '').trim().slice(0, 200)

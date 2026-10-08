@@ -77,7 +77,7 @@ export default function TimeGrid({ days: daysIn, columns, occurrences, colourOf,
                 {layoutDay(occurrences, d).map(({ ev, top, bottom, col, cols: n }) => {
                   const h = (bottom - top) / 60 * HOUR
                   return (
-                    <button key={ev.key} className={`ev${ev.plan ? ' plan' : ev.friend ? ' friend' : ''}${ev.friend && ev.visibility === 'busy' ? ' busy' : ''}`} onClick={() => onEvent(ev)}
+                    <button key={ev.key} className={`ev${ev.sleep ? ' sleep' : ''}${ev.plan ? ' plan' : ev.friend ? ' friend' : ''}${ev.friend && ev.visibility === 'busy' ? ' busy' : ''}`} onClick={() => onEvent(ev)}
                       style={{ ...evVars(colourOf(ev)), top: top / 60 * HOUR + 1, height: h - 2, left: `calc(${col / n * 100}% + 2px)`, width: `calc(${100 / n}% - 4px)` }}>
                       <b>{ev.friend && !people && <span className="who-tag">{first(ev.friend)} </span>}{ev.title}</b>
                       {h > 34 && <small>{timeLabel(ev)}</small>}

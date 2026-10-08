@@ -34,6 +34,7 @@ import HelpSheet from './components/HelpSheet'
 import MyWeekSheet from './components/MyWeekSheet'
 import StoryViewer from './components/StoryViewer'
 import AddPhotoSheet from './components/AddPhotoSheet'
+import ChangeSheet from './components/ChangeSheet'
 import { onThisDay, photoUrls, useWeeks, weekStartOf, isoDay } from './lib/memories'
 import { supabase } from './lib/supabase'
 import WelcomeTour from './components/WelcomeTour'
@@ -43,6 +44,7 @@ import PollSheet from './components/PollSheet'
 import { differenceInCalendarDays } from 'date-fns'
 import NotificationsSheet, { BellIcon } from './components/NotificationsSheet'
 import { buildBusyMap, freeNow } from './lib/freetime'
+import { friendSleepRows, sleepBlocks } from './lib/sleep'
 
 const VIEWS = [['day', 'Day', 'One day, in detail'], ['week', 'Week', 'Seven days at a glance'], ['month', 'Month', 'The whole month'], ['agenda', 'List', 'Everything coming up'], ['people', 'People', 'Everyone side by side for a day']]
 const readView = () => { try { return localStorage.getItem('klander:view') || 'week' } catch { return 'week' } }
@@ -106,7 +108,9 @@ export default function CalendarApp({ data, user }) {
 
   useEffect(() => { try { localStorage.setItem('klander:view', view) } catch { /* ignore */ } }, [view])
   useEffect(() => { const t = setInterval(() => setNow(new Date()), 60000); return () => clearInterval(t) }, [])
+  const [undo, setUndo] = useState(null) // { msg, fn }
   useEffect(() => { if (!toast) return; const t = setTimeout(() => setToast(''), 4000); return () => clearTimeout(t) }, [toast])
+  useEffect(() => { if (!undo) return; const t = setTimeout(() => setUndo(null), 6000); return () => clearTimeout(t) }, [undo])
 
   // Arrived through someone's invite link? Become friends now that we're signed in.
   useEffect(() => {
@@ -144,13 +148,23 @@ export default function CalendarApp({ data, user }) {
     return out
   }, [bd.mine, bd.friends, f.people, data.profile, user.id])
   const bdays = useMemo(() => birthdayOccurrences(bdayPeople.filter(b => !f.hidden.includes(b.id)), range.from, range.to), [bdayPeople, f.hidden, range])
+  // Sleep after shifts (categories marked as shifts)
+  const isShift = o => !!catMap[o.category_id]?.is_shift
+  const hasShifts = data.categories.some(c => c.is_shift)
+  const sleepHours = Number(data.profile.sleep_hours ?? 7)
+  const mySleep = useMemo(() => (hasShifts ? sleepBlocks(expandEvents(data.events, addDays(range.from, -1), range.to), isShift, sleepHours).filter(b => b.end > range.from && b.start < range.to) : []),
+    [data.events, range, hasShifts, sleepHours, catMap]) // eslint-disable-line react-hooks/exhaustive-deps
   const occurrences = useMemo(
-    () => [...bdays, ...(meHidden ? [] : [...mine, ...planOcc]), ...theirs].sort((a, b) => a.start - b.start || b.end - a.end),
-    [bdays, mine, planOcc, theirs, meHidden])
+    () => [...bdays, ...(meHidden ? [] : [...mine, ...planOcc, ...mySleep]), ...theirs].sort((a, b) => a.start - b.start || b.end - a.end),
+    [bdays, mine, planOcc, mySleep, theirs, meHidden])
 
   // Free/busy for the free-time finder and the "free now" dots
   const dayKey = fmt(now, 'yyyy-MM-dd-HH')
-  const busyMap = useMemo(() => buildBusyMap({ uid: user.id, myEvents: data.events, myPlans: goingPlans, friendBusy: pl.busy, now: new Date() }),
+  const busyMap = useMemo(() => {
+    const n = new Date(), to = addDays(n, 16)
+    const myShiftRows = data.events.filter(e => catMap[e.category_id]?.is_shift).map(e => ({ ...e, is_shift: true, sleep_hours: sleepHours }))
+    return buildBusyMap({ uid: user.id, myEvents: [...data.events, ...friendSleepRows(myShiftRows, n, to)], myPlans: goingPlans, friendBusy: [...pl.busy, ...friendSleepRows(pl.busy, n, to)], now: n })
+  },
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [data.events, goingPlans, pl.busy, user.id, dayKey])
   const freeInfo = id => (busyMap[id] ? freeNow(busyMap[id], now) : { free: true, until: null })
@@ -203,13 +217,15 @@ export default function CalendarApp({ data, user }) {
   }, [fun, myBirthday, todayKey])
   const dismissBanner = () => { setDismissed(todayKey); try { localStorage.setItem('klander:bday-banner', todayKey) } catch { /* ignore */ } }
 
-  const colourOf = ev => harmonize(ev.birthday ? ev.birthday.person.colour : ev.friend ? ev.friend.colour : catMap[ev.category_id]?.colour || data.profile.colour)
+  const colourOf = ev => harmonize(ev.sleep ? '#8a8fa6' : ev.birthday ? ev.birthday.person.colour : ev.friend ? ev.friend.colour : catMap[ev.category_id]?.colour || data.profile.colour)
 
   const step = dir => setDate(d =>
     view === 'day' || view === 'people' ? addDays(d, dir) : view === 'week' ? addWeeks(d, dir) : view === 'month' ? addMonths(d, dir) : addDays(d, dir * 30))
 
   const openNew = start => setEditing({ start: start || defaultStart(date) })
-  const openEvent = occ => (occ.birthday
+  const openEvent = occ => (occ.sleep
+    ? setToast(`Sleep after your shift (${sleepHours} hours). Change it in Settings → Categories.`)
+    : occ.birthday
     ? setBdayView(occ)
     : occ.plan
     ? setInviteView({ ...occ.plan, start: occ.start, end: occ.end })
@@ -226,7 +242,7 @@ export default function CalendarApp({ data, user }) {
     const go = {
       views: () => setMenu('view'), add: () => setMenu('add'), smart: () => setSheet('smart'), calendars: () => setSheet('calendars'),
       friends: () => openFriends(), find: () => openPlans({ tab: 'find' }), plans: () => openPlans(), up: () => openPlans({ tab: 'up' }),
-      chat: () => openChat(), myweek: () => setSheet('myweek'), notify: () => setSheet('notify'), appearance: () => setSheet('appearance'), settings: () => setSheet('settings')
+      chat: () => openChat(), myweek: () => setSheet('myweek'), change: () => setSheet('change'), notify: () => setSheet('notify'), appearance: () => setSheet('appearance'), settings: () => setSheet('settings')
     }[what]
     if (go) setTimeout(go, 120)
   }
@@ -399,6 +415,10 @@ export default function CalendarApp({ data, user }) {
               <span className="add-ic accent"><svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 2l1.9 5.6L19.5 9.5l-5.6 1.9L12 17l-1.9-5.6L4.5 9.5l5.6-1.9zM19 14l.9 2.6 2.6.9-2.6.9L19 21l-.9-2.6-2.6-.9 2.6-.9z"/></svg></span>
               <span><b>Smart add</b><small>Type it, or snap a photo or screenshot</small></span>
             </button>
+            <button role="menuitem" onClick={() => { setMenu(null); setSheet('change') }}>
+              <span className="add-ic"><svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M4 17.2V20h2.8l8.3-8.3-2.8-2.8zm15.7-9.5a1 1 0 0 0 0-1.4l-2-2a1 1 0 0 0-1.4 0l-1.6 1.6 2.8 2.8z"/></svg></span>
+              <span><b>Change an event</b><small>Type it: "move gym to 7"</small></span>
+            </button>
             {f.friends.length > 0 && <button role="menuitem" onClick={() => { setMenu(null); openPlans({ tab: 'find' }) }}>
               <span className="add-ic"><svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8zm7 0a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM9 13c-3.3 0-7 1.6-7 4v2h14v-2c0-2.4-3.7-4-7-4zm7 0c-.5 0-1 0-1.6.1 1.6 1 2.6 2.3 2.6 3.9v2h5v-2c0-2.4-3.2-4-6-4z"/></svg></span>
               <span><b>Plan with friends</b><small>Find a time everyone's free</small></span>
@@ -430,9 +450,11 @@ export default function CalendarApp({ data, user }) {
         </button>
       </nav>
       {!data.online && <div className="offline-pill">Offline · showing saved calendar</div>}
-      {toast && <div className="toast" role="status">{toast}</div>}
+      {toast && !undo && <div className="toast" role="status">{toast}</div>}
+      {undo && <div className="toast undo" role="status"><span>{undo.msg}</span><button onClick={async () => { const fn = undo.fn; setUndo(null); try { await fn(); setToast('Put back') } catch (e) { setToast(e.message) } }}>Undo</button></div>}
 
-      {editing && <EventEditor data={data} {...editing} uid={user.id} people={f.people} friends={f.friends.map(x => x.person)} groups={so.groups} plans={pl} onChat={id => startChatWith(() => ch.eventThread(id))} onClose={msg => { setEditing(null); if (msg) setToast(msg) }} />}
+      {editing && <EventEditor data={data} {...editing} uid={user.id} people={f.people} friends={f.friends.map(x => x.person)} groups={so.groups} plans={pl} onChat={id => startChatWith(() => ch.eventThread(id))} clashesFor={(s, e, id) => [...expandEvents([...data.events, ...goingPlans], s, e).filter(o => !o.all_day && o.id !== id && o.start < e && o.end > s), ...(hasShifts ? sleepBlocks(expandEvents(data.events.filter(x => x.id !== id), addDays(s, -1), e), isShift, sleepHours).filter(b => b.start < e && b.end > s) : [])]}
+        onClose={(msg, undoFn) => { setEditing(null); if (undoFn) setUndo({ msg, fn: undoFn }); else if (msg) setToast(msg) }} />}
       {sheet === 'plans' && <PlansSheet uid={user.id} me={data} plans={pl} social={so} friendLinks={f.friends} plansWith={plansWith} onOpenPoll={id => setPollView({ id })} people={f.people} friends={f.friends.map(x => x.person)} busyMap={busyMap}
         initial={planInit} onPlan={startPlan} onClose={() => setSheet(null)} onOpenInvite={i => setInviteView(i)} />}
       {sheet === 'notify' && <NotificationsSheet n={nt} people={f.people} friends={f.friends.map(x => x.person)} onClose={() => setSheet(null)} onOpen={openUrl} />}
@@ -466,6 +488,7 @@ export default function CalendarApp({ data, user }) {
             } catch (e) { setToast(e.message) }
           }} />
       })()}
+      {sheet === 'change' && <ChangeSheet data={data} onClose={() => setSheet(null)} onDone={(msg, undoFn) => { setSheet(null); if (undoFn) setUndo({ msg, fn: undoFn }); else setToast(msg) }} />}
       {sheet === 'help' && <HelpSheet onClose={() => setSheet(null)} onShow={showMe} onTour={() => { setSheet(null); setTour(true) }} />}
       {tour && !editing && <WelcomeTour onDone={doneTour} />}
       {sheet === 'chat' && <ChatScreen chats={ch} uid={user.id} me={p} people={f.people} friends={f.friends.map(x => x.person)} initialId={chatOpen} upcoming={upcoming}

@@ -441,3 +441,14 @@ create table public.poll_votes (option_id uuid not null references public.poll_o
 -- week_reactions (one emoji per person per week). Triggers: notify_on_week (friends), notify_on_week_reaction (owner).
 -- cron 'klander-week-ready' Sundays 17:45 UTC: "Your week is ready" for anyone with photos or 3+ events that week.
 -- memory_orphans(): cleanup removes memory files whose photo row/event was deleted.
+
+-- ============================================================
+-- Phase 10 (part 2): family link, shifts & sleep, morning brief
+-- ============================================================
+-- family_feed_tokens (user_id pk, token, active): my_family_token(reset), stop_family_link(), family_link_on().
+--   The feed function serves these as: Friends events normally, Close/Busy-only as "Busy", Private never, no notes.
+-- categories.is_shift + categories.default_reminder; profiles.sleep_hours (default 7).
+--   A sleep block follows each shift; friend_busy_v2() also returns is_shift + sleep_hours so the finder respects friends' sleep.
+-- notify_settings.morning_brief, brief_time, quiet_follow_sleep.
+-- notifications.dedupe_key (unique) so reminders and briefs are only made once
+--   (the earlier partial unique index couldn't be used by ON CONFLICT, so reminders were silently not being created).

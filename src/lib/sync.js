@@ -79,3 +79,19 @@ export function ago(iso) {
   if (h < 24) return `${h} h ago`
   return `${Math.round(h / 24)} d ago`
 }
+
+/** Family link: Friends events + Busy-only (as "Busy"), never Private. Separate from your own link. */
+export async function getFamilyLink(reset = false) {
+  const { data, error } = await supabase.rpc('my_family_token', { reset })
+  if (error) throw new Error(error.message)
+  const https = `${FN('feed')}?token=${data}`
+  return { https, webcal: https.replace(/^https:/, 'webcal:') }
+}
+export async function familyLinkOn() {
+  const { data } = await supabase.rpc('family_link_on')
+  return !!data
+}
+export async function stopFamilyLink() {
+  const { error } = await supabase.rpc('stop_family_link')
+  if (error) throw new Error(error.message)
+}

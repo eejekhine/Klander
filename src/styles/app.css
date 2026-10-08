@@ -692,3 +692,11 @@ input[type="date"].input, input[type="time"].input { -webkit-appearance: none; a
 .story-reply button { background: #fff; color: #111; border: 0; border-radius: 999px; padding: 0 16px; font-weight: 700; }
 .story-reply button:disabled { opacity: .4; }
 .story-seen { text-align: center; margin: 0; font-size: 14px; opacity: .85; }
+
+/* ---------- phase 10 part 2 ---------- */
+.ev.sleep { background: repeating-linear-gradient(135deg, color-mix(in srgb, var(--muted) 10%, transparent) 0 6px, transparent 6px 12px) !important; border: 1px dashed color-mix(in srgb, var(--muted) 45%, transparent) !important; color: var(--muted) !important; box-shadow: none !important; }
+.ev.sleep b { font-weight: 600; }
+.clash { display: grid; gap: 8px; padding: 12px; border-radius: calc(var(--r) + 5px); background: color-mix(in srgb, #f5a623 14%, var(--surface)); border: 1px solid color-mix(in srgb, #f5a623 45%, transparent); font-size: 14px; }
+.toast.undo { display: flex; align-items: center; gap: 14px; top: auto; bottom: calc(80px + var(--safe-bottom)); }
+.toast.undo button { background: none; border: 0; color: var(--accent-soft); font-weight: 700; font-size: 14px; padding: 0; }
+.change-card { gap: 6px; }
