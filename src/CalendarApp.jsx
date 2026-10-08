@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { addDays, addMonths, addWeeks } from 'date-fns'
 import { expandEvents, rangeFor, titleFor } from './lib/dates'
 import { initials } from './lib/colours'
@@ -31,6 +31,11 @@ import { useSocial } from './lib/social'
 import Swipe from './components/Swipe'
 import ChatScreen from './components/ChatScreen'
 import HelpSheet from './components/HelpSheet'
+import MyWeekSheet from './components/MyWeekSheet'
+import StoryViewer from './components/StoryViewer'
+import AddPhotoSheet from './components/AddPhotoSheet'
+import { onThisDay, photoUrls, useWeeks, weekStartOf, isoDay } from './lib/memories'
+import { supabase } from './lib/supabase'
 import WelcomeTour from './components/WelcomeTour'
 import { TOUR_KEY } from './lib/help'
 import { useChats } from './lib/chat'
@@ -60,6 +65,18 @@ export default function CalendarApp({ data, user }) {
   const chatUnread = ch.unread
   const [chatOpen, setChatOpen] = useState(null)
   const [smartText, setSmartText] = useState('')
+  const [smartFile, setSmartFile] = useState(null)
+  const wk = useWeeks(user.id)
+  const [story, setStory] = useState(null)
+  const [pendingWeek, setPendingWeek] = useState(null) // a week_recaps row (or a one-off { slides })
+  const [photoFile, setPhotoFile] = useState(null)
+  const photoInput = useRef(null)
+  const [otd, setOtd] = useState([])
+  const [seenWeeks, setSeenWeeks] = useState(() => { try { return JSON.parse(localStorage.getItem('klander:seen-weeks')) || [] } catch { return [] } })
+  const openWeek = w => {
+    setStory(w)
+    if (w.user_id !== user.id && !seenWeeks.includes(w.id)) { const n = [...seenWeeks, w.id].slice(-60); setSeenWeeks(n); try { localStorage.setItem('klander:seen-weeks', JSON.stringify(n)) } catch { /* ignore */ } }
+  }
   const [tour, setTour] = useState(() => { try { return !localStorage.getItem(TOUR_KEY) } catch { return false } })
   const doneTour = () => { setTour(false); try { localStorage.setItem(TOUR_KEY, '1') } catch { /* ignore */ } }
   const openChat = id => { setCard(null); setInviteView(null); setEditing(null); setChatOpen(id || null); setSheet('chat') }
@@ -209,7 +226,7 @@ export default function CalendarApp({ data, user }) {
     const go = {
       views: () => setMenu('view'), add: () => setMenu('add'), smart: () => setSheet('smart'), calendars: () => setSheet('calendars'),
       friends: () => openFriends(), find: () => openPlans({ tab: 'find' }), plans: () => openPlans(), up: () => openPlans({ tab: 'up' }),
-      chat: () => openChat(), notify: () => setSheet('notify'), appearance: () => setSheet('appearance'), settings: () => setSheet('settings')
+      chat: () => openChat(), myweek: () => setSheet('myweek'), notify: () => setSheet('notify'), appearance: () => setSheet('appearance'), settings: () => setSheet('settings')
     }[what]
     if (go) setTimeout(go, 120)
   }
@@ -224,6 +241,8 @@ export default function CalendarApp({ data, user }) {
     else if (open === 'friends' || open === 'activity') openFriends()
     else if (open?.startsWith('poll:')) setPollView({ id: open.slice(5) })
     else if (open?.startsWith('chat:')) openChat(open.slice(5))
+    else if (open === 'myweek') setSheet('myweek')
+    else if (open?.startsWith('week:')) { const id = open.slice(5); const w = wk.weeks.find(x => x.id === id); if (w) openWeek(w); else wk.refresh().then(() => setTimeout(() => setPendingWeek(id), 0)) }
     else if (open?.startsWith('event:')) {
       const ev = data.events.find(e => e.id === open.slice(6))
       if (ev) { setDate(new Date(ev.starts_at)); setEditing({ event: ev }) }
@@ -240,6 +259,13 @@ export default function CalendarApp({ data, user }) {
 
   const p = data.profile
   const requests = f.incoming.length
+  useEffect(() => { if (pendingWeek) { const w = wk.weeks.find(x => x.id === pendingWeek); if (w) { openWeek(w); setPendingWeek(null) } } }, [pendingWeek, wk.weeks]) // eslint-disable-line react-hooks/exhaustive-deps
+  // One year ago today (photos)
+  useEffect(() => { onThisDay(now).then(setOtd).catch(() => {}) }, [todayKey]) // eslint-disable-line react-hooks/exhaustive-deps
+  const friendWeeks = wk.weeks.filter(w => w.user_id !== user.id && w.posted_at && f.people[w.user_id])
+  const myWeekKey = isoDay(weekStartOf(now))
+  const myWeekPosted = wk.weeks.some(w => w.user_id === user.id && w.week_start === myWeekKey && w.posted_at)
+  const weekendish = [0, 5, 6].includes(now.getDay())
   const upcoming = expandEvents([...data.events, ...goingPlans], now, addDays(now, 30)).slice(0, 25)
     .map(o => ({ id: o.id, owner_id: o.owner_id, title: o.title, starts_at: o.start.toISOString(), ends_at: o.end.toISOString(), all_day: o.all_day, location: o.location }))
   const openEventRef = ref => {
@@ -252,6 +278,21 @@ export default function CalendarApp({ data, user }) {
   const showsToday = now >= range.from && now < range.to
   // One slim, swipeable row of "today" cards: countdowns, friends looking for plans, birthdays
   const cards = [
+    ...(weekendish && !myWeekPosted ? [(
+      <button key="myweek" className="card week-ready" onClick={() => setSheet('myweek')}>
+        <span className="wk-ring"><Avatar person={p} size={26} /></span><span><b>Your week</b> is ready to share</span>
+      </button>)] : []),
+    ...friendWeeks.filter(w => !seenWeeks.includes(w.id)).slice(0, 4).map(w => (
+      <button key={w.id} className="card week-card-home" onClick={() => openWeek(w)}>
+        <span className="wk-ring"><Avatar person={f.people[w.user_id]} size={26} /></span><span><b>{first(f.people[w.user_id])}'s</b> week</span>
+      </button>)),
+    ...(otd.length ? [(
+      <button key="otd" className="card otd" onClick={async () => {
+        const urls = await photoUrls(otd.map(x => x.path))
+        setStory({ user_id: user.id, slides: otd.map(x => ({ type: 'photo', key: x.id, path: x.path, at: x.taken_at, title: data.events.find(e => e.id === x.event_id)?.title || 'One year ago', caption: '' })), caption: 'One year ago', _urls: urls })
+      }}>
+        <span className="otd-ic">1y</span><span><b>One year ago</b> today</span>
+      </button>)] : []),
     ...(soon.length > 0 && dismissed !== todayKey ? [(
       <div key="bday" className="card bday-card">
         <Cake size={16} />
@@ -350,6 +391,10 @@ export default function CalendarApp({ data, user }) {
               <span className="add-ic"><svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M7 2v2H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2h-2V2h-2v2H9V2zm-2 7h14v11H5z"/></svg></span>
               <span><b>New event</b><small>Pick the time yourself</small></span>
             </button>
+            <button role="menuitem" onClick={() => { setMenu(null); photoInput.current?.click() }}>
+              <span className="add-ic"><svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M9 4 7.2 6H4a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-3.2L15 4zm3 4.5a4.5 4.5 0 1 1 0 9 4.5 4.5 0 0 1 0-9z"/></svg></span>
+              <span><b>Add a photo</b><small>Put it on what you're doing, for your My Week</small></span>
+            </button>
             <button role="menuitem" onClick={() => { setMenu(null); setSheet('smart') }}>
               <span className="add-ic accent"><svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 2l1.9 5.6L19.5 9.5l-5.6 1.9L12 17l-1.9-5.6L4.5 9.5l5.6-1.9zM19 14l.9 2.6 2.6.9-2.6.9L19 21l-.9-2.6-2.6-.9 2.6-.9z"/></svg></span>
               <span><b>Smart add</b><small>Type it, or snap a photo or screenshot</small></span>
@@ -362,6 +407,7 @@ export default function CalendarApp({ data, user }) {
         </>
       )}
 
+      <input ref={photoInput} type="file" accept="image/*" hidden onChange={e => { const fl = e.target.files?.[0]; e.target.value = ''; if (fl) setPhotoFile(fl) }} />
       <nav className="tabbar" aria-label="Main">
         <button className="tab" aria-current={!sheet ? 'page' : undefined} onClick={() => { setSheet(null); setMenu(null) }}>
           <svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M7 2v2H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2h-2V2h-2v2H9V2zm-2 7h14v11H5zm3 3v2h2v-2zm4 0v2h2v-2z"/></svg>
@@ -386,13 +432,13 @@ export default function CalendarApp({ data, user }) {
       {!data.online && <div className="offline-pill">Offline · showing saved calendar</div>}
       {toast && <div className="toast" role="status">{toast}</div>}
 
-      {editing && <EventEditor data={data} {...editing} friends={f.friends.map(x => x.person)} groups={so.groups} plans={pl} onChat={id => startChatWith(() => ch.eventThread(id))} onClose={msg => { setEditing(null); if (msg) setToast(msg) }} />}
+      {editing && <EventEditor data={data} {...editing} uid={user.id} people={f.people} friends={f.friends.map(x => x.person)} groups={so.groups} plans={pl} onChat={id => startChatWith(() => ch.eventThread(id))} onClose={msg => { setEditing(null); if (msg) setToast(msg) }} />}
       {sheet === 'plans' && <PlansSheet uid={user.id} me={data} plans={pl} social={so} friendLinks={f.friends} plansWith={plansWith} onOpenPoll={id => setPollView({ id })} people={f.people} friends={f.friends.map(x => x.person)} busyMap={busyMap}
         initial={planInit} onPlan={startPlan} onClose={() => setSheet(null)} onOpenInvite={i => setInviteView(i)} />}
       {sheet === 'notify' && <NotificationsSheet n={nt} people={f.people} friends={f.friends.map(x => x.person)} onClose={() => setSheet(null)} onOpen={openUrl} />}
       {pollView && so.polls.find(q => q.id === pollView.id) && <PollSheet poll={so.polls.find(q => q.id === pollView.id)} social={so} uid={user.id} me={p} people={f.people} onDecide={decidePoll} onClose={() => setPollView(null)} />}
-      {inviteView && <InviteSheet invite={inviteView} plans={pl} people={f.people} me={p} onClose={() => setInviteView(null)} onChat={() => startChatWith(() => ch.eventThread(inviteView.id))} />}
-      {viewing && <FriendEventSheet occ={viewing} onClose={() => setViewing(null)} />}
+      {inviteView && <InviteSheet invite={inviteView} plans={pl} people={f.people} me={p} uid={user.id} onClose={() => setInviteView(null)} onChat={() => startChatWith(() => ch.eventThread(inviteView.id))} />}
+      {viewing && <FriendEventSheet occ={viewing} uid={user.id} me={p} people={f.people} onClose={() => setViewing(null)} />}
       {sheet === 'settings' && <Settings data={data} bd={bd} onClose={() => setSheet(null)} onOpenCalendars={() => setSheet('calendars')} onOpenAppearance={() => setSheet('appearance')} onOpenHelp={() => setSheet('help')} />}
       {sheet === 'appearance' && <AppearanceSheet data={data} onClose={() => setSheet(null)} />}
       {bdayView && <BirthdaySheet occ={bdayView} onClose={() => setBdayView(null)}
@@ -401,7 +447,25 @@ export default function CalendarApp({ data, user }) {
         onFindTime={() => openPlans({ tab: 'find', with: [card.id] })} onMessage={() => startChatWith(() => ch.startDm(card.id))}
         onClose={() => setCard(null)} onShowWeek={() => { f.showOnly(card.id); setCard(null); setSheet(null) }} />}
       {confetti && <Confetti colours={[p.colour, '#ffb020', '#ff5d8f', '#22c55e', '#7c3aed']} onDone={() => setConfetti(false)} />}
-      {sheet === 'smart' && <SmartAddSheet data={data} initialText={smartText} onClose={() => { setSheet(null); setSmartText('') }} onDone={msg => { setSheet(null); setSmartText(''); setToast(msg) }} />}
+      {sheet === 'smart' && <SmartAddSheet data={data} initialText={smartText} initialFile={smartFile} onClose={() => { setSheet(null); setSmartText(''); setSmartFile(null) }} onDone={msg => { setSheet(null); setSmartText(''); setSmartFile(null); setToast(msg) }} />}
+      {sheet === 'myweek' && <MyWeekSheet uid={user.id} me={p} data={data} goingPlans={goingPlans} guests={pl.guests} catMap={catMap} people={f.people} weeks={wk} onClose={() => setSheet(null)} onToast={setToast} />}
+      {photoFile && <AddPhotoSheet uid={user.id} file={photoFile} data={data} goingPlans={goingPlans} onClose={() => setPhotoFile(null)}
+        onDone={msg => { setPhotoFile(null); setToast(msg) }} onMakeEvent={fl => { setPhotoFile(null); setSmartFile(fl); setSheet('smart') }} />}
+      {story && (() => {
+        const owner = story.user_id === user.id ? p : f.people[story.user_id]
+        const mine = story.user_id === user.id
+        return <StoryViewer slides={story.slides} owner={owner} people={f.people} caption={story.caption} mine={mine || !story.id}
+          reactions={wk.reactions.filter(r => r.recap_id === story.id)} myReaction={wk.reactions.find(r => r.recap_id === story.id && r.user_id === user.id)?.emoji}
+          onClose={() => setStory(null)} onReact={e => wk.react(story.id, e)}
+          onReply={async text => {
+            try {
+              const cid = await ch.startDm(story.user_id)
+              const { error } = await supabase.from('messages').insert({ conversation_id: cid, sender_id: user.id, kind: 'text', body: `Re your week: ${text}` })
+              if (error) throw error
+              setToast(`Sent to ${first(owner)}`)
+            } catch (e) { setToast(e.message) }
+          }} />
+      })()}
       {sheet === 'help' && <HelpSheet onClose={() => setSheet(null)} onShow={showMe} onTour={() => { setSheet(null); setTour(true) }} />}
       {tour && !editing && <WelcomeTour onDone={doneTour} />}
       {sheet === 'chat' && <ChatScreen chats={ch} uid={user.id} me={p} people={f.people} friends={f.friends.map(x => x.person)} initialId={chatOpen} upcoming={upcoming}
@@ -409,7 +473,7 @@ export default function CalendarApp({ data, user }) {
       {sheet === 'calendars' && <CalendarsSheet data={data} cal={cal} onClose={() => setSheet(null)} />}
       {imported && <ImportedEventSheet occ={imported} source={cal.sources.find(s => s.id === imported.source_id)}
         category={catMap[imported.category_id]} onClose={() => setImported(null)} onOpenCalendars={() => { setImported(null); setSheet('calendars') }} />}
-      {sheet === 'friends' && <FriendsSheet f={f} social={so} onClose={() => setSheet(null)} onPerson={person => { setSheet(null); setCard(person) }} />}
+      {sheet === 'friends' && <FriendsSheet f={f} social={so} weeks={friendWeeks} seenWeeks={seenWeeks} onOpenWeek={w => { setSheet(null); openWeek(w) }} onMyWeek={() => setSheet('myweek')} onClose={() => setSheet(null)} onPerson={person => { setSheet(null); setCard(person) }} />}
     </div>
   )
 }

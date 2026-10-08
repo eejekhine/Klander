@@ -47,6 +47,17 @@ export const HELP = [
     ]
   },
   {
+    group: 'Memories and My Week',
+    items: [
+      { id: 'photos', title: 'Add photos to an event', body: 'Open the event and tap Add under Photos, or tap + then Add a photo and pick what you were doing. Everyone going to a plan can add theirs.', show: 'add' },
+      { id: 'myweek', title: 'Make your My Week', body: 'Friends → My week (or the "Your week is ready" card at the weekend). Klander builds a story from your photos and plans. Hide anything, add captions, then post.', show: 'myweek' },
+      { id: 'weekprivacy', title: 'What goes in My Week', body: 'Private and busy-only events are left out unless you switch them on. Choose All friends or Close friends before posting, and you can take it down any time.', show: 'myweek' },
+      { id: 'watch', title: "Watch friends' weeks", body: 'Tap their card on the home screen or their circle in Friends. Tap right to skip, left to go back, hold to pause. React or reply and it goes to your chat.', show: 'friends' },
+      { id: 'saveimg', title: 'Save your week as an image', body: 'In My Week tap Save image to get a collage you can post anywhere.', show: 'myweek' },
+      { id: 'otd', title: 'One year ago', body: 'If you took photos on this day last year, a "One year ago" card appears on the home screen.' }
+    ]
+  },
+  {
     group: 'Notifications',
     items: [
       { id: 'push', title: 'Turn on notifications', body: 'Tap the bell, then Turn on notifications. On iPhone, Klander must be on your Home Screen first.', show: 'notify' },

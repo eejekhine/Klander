@@ -1,8 +1,9 @@
 import Sheet from './Sheet'
 import { Avatar } from './FriendsSheet'
 import { fmt, timeLabel } from '../lib/dates'
+import EventPhotos from './EventPhotos'
 
-export default function FriendEventSheet({ occ, onClose }) {
+export default function FriendEventSheet({ occ, onClose, uid, me, people }) {
   const p = occ.friend
   const busy = occ.visibility === 'busy'
   return (
@@ -16,6 +17,7 @@ export default function FriendEventSheet({ occ, onClose }) {
         {occ.location && <div><span className="muted">Where: </span>{occ.location}</div>}
         {busy && <p className="small muted">{p.display_name || p.username} has marked this as busy, so the details are hidden.</p>}
       </div>
+      {!busy && <EventPhotos eventId={occ.id} uid={uid} canAdd={false} people={people} me={me} />}
     </Sheet>
   )
 }

@@ -20,7 +20,7 @@ export function Avatar({ person, size = 38 }) {
   return <span className="avatar" style={style} aria-hidden="true">{!person?.avatar_url && initials(person)}</span>
 }
 
-export default function FriendsSheet({ f, social, onClose, onPerson }) {
+export default function FriendsSheet({ f, social, weeks = [], seenWeeks = [], onOpenWeek, onMyWeek, onClose, onPerson }) {
   const [username, setUsername] = useState('')
   const [busy, setBusy] = useState(false)
   const [msg, setMsg] = useState('')
@@ -55,6 +55,22 @@ export default function FriendsSheet({ f, social, onClose, onPerson }) {
 
   return (
     <Sheet title="Friends" onClose={onClose}>
+      {f.friends.length > 0 && (
+        <div className="group">
+          <h3>Weeks</h3>
+          <div className="weeks-row">
+            <button className="week-bubble mine" onClick={onMyWeek}><span className="wk-ring plus">+</span><small>My week</small></button>
+            {weeks.map(w => f.people[w.user_id] && (
+              <button key={w.id} className={`week-bubble${seenWeeks.includes(w.id) ? ' seen' : ''}`} onClick={() => onOpenWeek(w)}>
+                <span className="wk-ring"><Avatar person={f.people[w.user_id]} size={46} /></span>
+                <small>{(f.people[w.user_id].display_name || f.people[w.user_id].username).split(/\s+/)[0]}</small>
+              </button>
+            ))}
+          </div>
+          {weeks.length === 0 && <p className="small muted" style={{ margin: 0 }}>When friends post their week, it shows up here.</p>}
+        </div>
+      )}
+
       <form className="group" onSubmit={add}>
         <h3>Add a friend</h3>
         <div className="row">

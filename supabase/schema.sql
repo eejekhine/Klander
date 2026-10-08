@@ -428,3 +428,16 @@ create table public.poll_votes (option_id uuid not null references public.poll_o
 -- Chat photo cleanup (daily, cron 'klander-cleanup' 03:17 UTC -> Edge Function cleanup):
 -- messages.image_removed_at; chat_photos_to_remove(lim) + mark_photos_removed(ids) are service_role only.
 -- Removes photos from deleted messages, photos older than 6 months, and uploads never sent (older than a day).
+
+-- ============================================================
+-- Phase 9: memories + My Week
+-- ============================================================
+-- event_photos (event_id, user_id, path '<event_id>/<uuid>.jpg', caption, taken_at); storage bucket 'memories' (private, 3 MB, jpeg/webp)
+-- can_view_event(ev): host, invited (not declined), or a friend who can see the event's details (friends / close, not hidden_from)
+-- can_add_event_photo(ev): host, or a guest who said Going/Maybe
+-- can_view_photo(id): your own, or you can see the event, or it's in a friend's posted My Week you're allowed to see
+-- week_recaps (user_id, week_start, slides jsonb, caption, visibility friends|close, posted_at) unique per user+week;
+--   hidden slides are saved WITHOUT photo_id/path so nobody can load a photo you hid.
+-- week_reactions (one emoji per person per week). Triggers: notify_on_week (friends), notify_on_week_reaction (owner).
+-- cron 'klander-week-ready' Sundays 17:45 UTC: "Your week is ready" for anyone with photos or 3+ events that week.
+-- memory_orphans(): cleanup removes memory files whose photo row/event was deleted.

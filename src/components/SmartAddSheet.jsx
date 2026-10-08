@@ -6,7 +6,7 @@ import { draftToEvent, prepareImage, readWithAI, repeatLabel } from '../lib/smar
 const EXAMPLES = ['basketball thurs 7pm at the edge', 'dinner with sam saturday 8 at nandos', 'dentist 14th nov 9:30']
 const VIS = [['friends', 'Friends'], ['busy', 'Busy only'], ['private', 'Private']]
 
-export default function SmartAddSheet({ data, onClose, onDone, initialText = '' }) {
+export default function SmartAddSheet({ data, onClose, onDone, initialText = '', initialFile = null }) {
   const [stage, setStage] = useState('input') // input | reading | review
   const [text, setText] = useState(initialText)
   const [image, setImage] = useState(null)
@@ -17,6 +17,9 @@ export default function SmartAddSheet({ data, onClose, onDone, initialText = '' 
   const [visibility, setVisibility] = useState('friends')
   const [saving, setSaving] = useState(false)
   const fileRef = useRef(null)
+
+  // Opened with a photo already picked (e.g. "Add a photo" with no event to put it on)
+  useEffect(() => { if (initialFile) prepareImage(initialFile).then(setImage).catch(e => setError(e.message)) }, [initialFile])
 
   // Paste a screenshot straight in (desktop, or iPhone long-press > Paste)
   useEffect(() => {

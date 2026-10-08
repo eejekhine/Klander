@@ -4,6 +4,7 @@ import Sheet from './Sheet'
 import { Avatar } from './FriendsSheet'
 import { statusLabel } from '../lib/plans'
 import { REMINDERS } from '../lib/notify'
+import EventPhotos from './EventPhotos'
 import { REPEATS, buildRRule, fmt, parseRRule, startOfDay } from '../lib/dates'
 
 const D = d => format(d, 'yyyy-MM-dd')
@@ -17,7 +18,7 @@ const VIS = [
   ['private', 'Private', 'Only you can see it']
 ]
 
-export default function EventEditor({ data, event, occurrence, start, end, title: title0, invite = [], hide = [], friends = [], groups = [], plans, onClose, onChat }) {
+export default function EventEditor({ data, event, occurrence, start, end, title: title0, invite = [], hide = [], friends = [], groups = [], plans, onClose, onChat, uid, people = {} }) {
   const isNew = !event
   const s0 = event ? new Date(event.starts_at) : start
   const e0 = event ? new Date(event.ends_at) : end || addMinutes(start, 60)
@@ -203,6 +204,8 @@ export default function EventEditor({ data, event, occurrence, start, end, title
         <label className="field"><span>Location</span><input id="ev-loc" className="input" value={location} onChange={e => setLocation(e.target.value)} placeholder="e.g. The Edge, Leeds Beckett" maxLength={200} /></label>
         <label className="field"><span>Notes</span><textarea id="ev-notes" className="input" value={notes} onChange={e => setNotes(e.target.value)} maxLength={2000} /></label>
       </div>
+
+      {!isNew && <EventPhotos eventId={event.id} uid={uid} canAdd isHost people={people} me={data.profile} takenAt={occurrence || (new Date(event.ends_at) < new Date() ? new Date(event.starts_at) : null)} />}
 
       {error && <p className="error" role="alert">{error}</p>}
 

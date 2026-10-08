@@ -3,9 +3,10 @@ import Sheet from './Sheet'
 import { Avatar } from './FriendsSheet'
 import { fmt, timeLabel } from '../lib/dates'
 import { RSVP, statusLabel } from '../lib/plans'
+import EventPhotos from './EventPhotos'
 
 /** A plan a friend invited you to: details, who's going, and your answer. */
-export default function InviteSheet({ invite, plans, people, me, onClose, onChat }) {
+export default function InviteSheet({ invite, plans, people, me, uid, onClose, onChat }) {
   const live = plans.invites.find(i => i.id === invite.id) || invite
   const host = people[live.owner_id]
   const [error, setError] = useState('')
@@ -42,6 +43,7 @@ export default function InviteSheet({ invite, plans, people, me, onClose, onChat
           </div>
         ))}
       </div>
+      <EventPhotos eventId={live.id} uid={uid} canAdd={['going', 'maybe'].includes(live.my_status)} people={people} me={me} />
       {error && <p className="error" role="alert">{error}</p>}
     </Sheet>
   )

@@ -1,5 +1,6 @@
 // Daily tidy-up so Klander stays inside the free storage allowance.
-// Deletes chat photos from deleted messages, photos older than 6 months, and uploads that never got sent.
+// Deletes chat photos from deleted messages, photos older than 6 months, and uploads that never got sent,
+// plus memory photos whose event or photo row is gone.
 // Called once a day by pg_cron with x-cron-secret.
 import 'jsr:@supabase/functions-js/edge-runtime.d.ts'
 import { createClient } from 'npm:@supabase/supabase-js@2'
@@ -27,5 +28,9 @@ Deno.serve(async req => {
     removed += paths.length
     if (rows.length < 500) break
   }
-  return json({ removed })
+  // Memory photos whose event or photo was deleted (the file is left behind)
+  const { data: orphans } = await admin.rpc('memory_orphans', { lim: 500 })
+  const mp = (orphans || []).map((r: { path: string }) => r.path)
+  for (let i = 0; i < mp.length; i += 100) await admin.storage.from('memories').remove(mp.slice(i, i + 100))
+  return json({ removed, memoryOrphans: mp.length })
 })
