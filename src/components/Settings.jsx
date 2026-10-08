@@ -5,7 +5,7 @@ import { PALETTE, initials } from '../lib/colours'
 import { themeName, useThemeState } from '../lib/themes'
 import BirthdayFields from './BirthdayFields'
 
-export default function Settings({ data, bd, onClose, onOpenCalendars, onOpenAppearance }) {
+export default function Settings({ data, bd, onClose, onOpenCalendars, onOpenAppearance, onOpenHelp }) {
   const theme = useThemeState()
   const p = data.profile
   const [displayName, setDisplayName] = useState(p.display_name || '')
@@ -79,6 +79,12 @@ export default function Settings({ data, bd, onClose, onOpenCalendars, onOpenApp
       </div>
 
       <Categories data={data} />
+
+      <div className="group">
+        <h3>Help</h3>
+        <p className="small muted" style={{ margin: 0 }}>How everything works, in plain English, with a button to take you there.</p>
+        <button className="btn block" onClick={onOpenHelp}>Help &amp; tips</button>
+      </div>
 
       <div className="group">
         <h3>Install on your iPhone</h3>

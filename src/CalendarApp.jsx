@@ -30,6 +30,9 @@ import { useNotifications } from './lib/notify'
 import { useSocial } from './lib/social'
 import Swipe from './components/Swipe'
 import ChatScreen from './components/ChatScreen'
+import HelpSheet from './components/HelpSheet'
+import WelcomeTour from './components/WelcomeTour'
+import { TOUR_KEY } from './lib/help'
 import { useChats } from './lib/chat'
 import PollSheet from './components/PollSheet'
 import { differenceInCalendarDays } from 'date-fns'
@@ -57,6 +60,8 @@ export default function CalendarApp({ data, user }) {
   const chatUnread = ch.unread
   const [chatOpen, setChatOpen] = useState(null)
   const [smartText, setSmartText] = useState('')
+  const [tour, setTour] = useState(() => { try { return !localStorage.getItem(TOUR_KEY) } catch { return false } })
+  const doneTour = () => { setTour(false); try { localStorage.setItem(TOUR_KEY, '1') } catch { /* ignore */ } }
   const openChat = id => { setCard(null); setInviteView(null); setEditing(null); setChatOpen(id || null); setSheet('chat') }
   const startChatWith = fn => fn().then(openChat).catch(e => setToast(e.message))
   const [pollView, setPollView] = useState(null)
@@ -198,6 +203,17 @@ export default function CalendarApp({ data, user }) {
       : setEditing({ event: data.events.find(e => e.id === occ.id), occurrence: occ.occurrence || null }))
   const openDay = d => { setDate(d); setView('day') }
 
+  // "Show me" from Help & tips
+  const showMe = what => {
+    setSheet(null); setMenu(null)
+    const go = {
+      views: () => setMenu('view'), add: () => setMenu('add'), smart: () => setSheet('smart'), calendars: () => setSheet('calendars'),
+      friends: () => openFriends(), find: () => openPlans({ tab: 'find' }), plans: () => openPlans(), up: () => openPlans({ tab: 'up' }),
+      chat: () => openChat(), notify: () => setSheet('notify'), appearance: () => setSheet('appearance'), settings: () => setSheet('settings')
+    }[what]
+    if (go) setTimeout(go, 120)
+  }
+
   // Tapping a notification opens the right place (?open=plans | up | friends | activity | event:<id>)
   const openUrl = url => {
     let open = null
@@ -286,6 +302,7 @@ export default function CalendarApp({ data, user }) {
                 </button>
               ))}
               <button role="menuitem" className="menu-today" onClick={() => { setDate(new Date()); setMenu(null) }}>Go to today</button>
+              <button role="menuitem" className="menu-help" onClick={() => { setMenu(null); setSheet('help') }}>Help &amp; tips</button>
               {season && <p className="menu-note"><span className="season-dot" /> {season.label}</p>}
             </div>
           </>
@@ -376,7 +393,7 @@ export default function CalendarApp({ data, user }) {
       {pollView && so.polls.find(q => q.id === pollView.id) && <PollSheet poll={so.polls.find(q => q.id === pollView.id)} social={so} uid={user.id} me={p} people={f.people} onDecide={decidePoll} onClose={() => setPollView(null)} />}
       {inviteView && <InviteSheet invite={inviteView} plans={pl} people={f.people} me={p} onClose={() => setInviteView(null)} onChat={() => startChatWith(() => ch.eventThread(inviteView.id))} />}
       {viewing && <FriendEventSheet occ={viewing} onClose={() => setViewing(null)} />}
-      {sheet === 'settings' && <Settings data={data} bd={bd} onClose={() => setSheet(null)} onOpenCalendars={() => setSheet('calendars')} onOpenAppearance={() => setSheet('appearance')} />}
+      {sheet === 'settings' && <Settings data={data} bd={bd} onClose={() => setSheet(null)} onOpenCalendars={() => setSheet('calendars')} onOpenAppearance={() => setSheet('appearance')} onOpenHelp={() => setSheet('help')} />}
       {sheet === 'appearance' && <AppearanceSheet data={data} onClose={() => setSheet(null)} />}
       {bdayView && <BirthdaySheet occ={bdayView} onClose={() => setBdayView(null)}
         onPlan={bdayView.birthday.me ? null : () => openPlans({ tab: 'find', hide: [bdayView.birthday.id], with: f.friends.map(x => x.person.id).filter(id => id !== bdayView.birthday.id).slice(0, 4), title: `${bdayView.birthday.short}'s birthday`, window: 'eve', days: 14 })} />}
@@ -385,6 +402,8 @@ export default function CalendarApp({ data, user }) {
         onClose={() => setCard(null)} onShowWeek={() => { f.showOnly(card.id); setCard(null); setSheet(null) }} />}
       {confetti && <Confetti colours={[p.colour, '#ffb020', '#ff5d8f', '#22c55e', '#7c3aed']} onDone={() => setConfetti(false)} />}
       {sheet === 'smart' && <SmartAddSheet data={data} initialText={smartText} onClose={() => { setSheet(null); setSmartText('') }} onDone={msg => { setSheet(null); setSmartText(''); setToast(msg) }} />}
+      {sheet === 'help' && <HelpSheet onClose={() => setSheet(null)} onShow={showMe} onTour={() => { setSheet(null); setTour(true) }} />}
+      {tour && !editing && <WelcomeTour onDone={doneTour} />}
       {sheet === 'chat' && <ChatScreen chats={ch} uid={user.id} me={p} people={f.people} friends={f.friends.map(x => x.person)} initialId={chatOpen} upcoming={upcoming}
         onClose={() => { setSheet(null); setChatOpen(null) }} onMakeEvent={t => { setSmartText(t); setSheet('smart') }} onOpenEvent={openEventRef} onToast={setToast} />}
       {sheet === 'calendars' && <CalendarsSheet data={data} cal={cal} onClose={() => setSheet(null)} />}
