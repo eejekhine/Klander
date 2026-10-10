@@ -1,5 +1,6 @@
 import { useEffect } from 'react'
 import { useKlanderData } from './lib/store'
+import { supabase } from './lib/supabase'
 import { applyThemeConfig } from './lib/themes'
 import Onboarding from './components/Onboarding'
 import CalendarApp from './CalendarApp'
@@ -20,8 +21,12 @@ export default function Shell({ user }) {
   if (!data.profile) {
     return (
       <div className="auth"><div className="auth-card">
-        <p className="error">Couldn't load your account{data.error ? `: ${data.error}` : '.'}</p>
+        <p className="error">{/single JSON object|PGRST116/.test(data.error || '')
+          ? "Your sign-in didn't stick on this phone, so Klander couldn't load your account."
+          : `Couldn't load your account${data.error ? `: ${data.error}` : '.'}`}</p>
+        <p className="small muted" style={{ margin: 0 }}>Sign out and back in. If it keeps happening, open klander.vercel.app in Safari itself (not inside Instagram, WhatsApp or another app) and turn off Private Browsing.</p>
         <button className="btn" onClick={data.refresh}>Try again</button>
+        <button className="btn ghost" onClick={() => supabase.auth.signOut()}>Sign out</button>
       </div></div>
     )
   }
