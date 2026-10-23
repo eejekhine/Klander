@@ -45,7 +45,9 @@ export default function SmartAddSheet({ data, onClose, onDone, initialText = '',
     if (!text.trim() && !image) return setError('Type something or add a photo first.')
     setError(''); setStage('reading')
     try {
-      const r = await readWithAI({ text: text.trim(), image })
+      const p = data.profile || {}
+      const who = [p.display_name, p.username].filter(Boolean).filter((v, i, a) => a.indexOf(v) === i).join(' / ')
+      const r = await readWithAI({ text: text.trim(), image, who })
       setDrafts((r.events || []).map((d, i) => ({ ...d, key: i, include: true })))
       setMessage(r.message || '')
       setStage('review')
@@ -94,18 +96,19 @@ export default function SmartAddSheet({ data, onClose, onDone, initialText = '',
               </div>
             : <button className="btn block" onClick={() => fileRef.current?.click()}>Take or choose a photo</button>}
           <input ref={fileRef} id="smart-file" type="file" accept="image/*" hidden onChange={pick} />
-          {image && <p className="small muted">You can add a note above too, like "only the Tuesday ones".</p>}
+          {image && <p className="small muted">Add a note above to help it, like "only my shifts" or "only the Tuesday ones". Rotas: it looks for your name.</p>}
         </div>
 
         {error && <p className="error" role="alert">{error}</p>}
         <button className="btn primary block" onClick={read} disabled={stage === 'reading' || (!text.trim() && !image)}>
-          {stage === 'reading' ? <><span className="spinner" aria-hidden="true" /> Reading…</> : 'Make events'}
+          {stage === 'reading' ? <><span className="spinner" aria-hidden="true" /> {image ? 'Reading every line…' : 'Reading…'}</> : 'Make events'}
         </button>
         <p className="small muted" style={{ textAlign: 'center', margin: 0 }}>Nothing is saved until you check it.</p>
       </>}
 
       {stage === 'review' && <>
         {message && <p className="notice">{message}</p>}
+        {image && drafts.length > 0 && <details className="photo-check"><summary>Check against your photo</summary><img src={image.preview} alt="Your photo" /></details>}
         {drafts.length === 0 && <button className="btn block" onClick={() => setStage('input')}>Try again</button>}
 
         {drafts.length > 0 && (
@@ -132,6 +135,7 @@ export default function SmartAddSheet({ data, onClose, onDone, initialText = '',
               <label className="switch"><input type="checkbox" checked={d.include} onChange={e => edit(d.key, { include: e.target.checked })} aria-label={`Include ${d.title}`} /><span /></label>
               <input className="title-input" style={{ fontSize: 17 }} value={d.title} onChange={e => edit(d.key, { title: e.target.value })} maxLength={120} aria-label="Title" />
             </div>
+            {d.source && <p className="draft-source">From: “{d.source}”</p>}
             {d.confidence < 0.6 && <p className="check-this">Check the date and time on this one.</p>}
             <label className="field"><span>Date</span>
               <input className="input" type="date" value={d.date} onChange={e => e.target.value && edit(d.key, { date: e.target.value })} />

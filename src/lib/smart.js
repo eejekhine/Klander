@@ -2,8 +2,8 @@ import { addDays, addMinutes, parse } from 'date-fns'
 import { supabase } from './supabase'
 import { buildRRule, fmt, startOfDay } from './dates'
 
-/** Shrink a photo/screenshot so it uploads fast and stays within the AI's limits. */
-export function prepareImage(file, maxSide = 1600) {
+/** Shrink a photo/screenshot so it uploads fast, but keep small print (rotas, timetables) sharp enough to read. */
+export function prepareImage(file, maxSide = 2400) {
   return new Promise((resolve, reject) => {
     const img = new Image()
     img.onload = () => {
@@ -12,7 +12,7 @@ export function prepareImage(file, maxSide = 1600) {
       c.width = Math.round(img.width * scale); c.height = Math.round(img.height * scale)
       c.getContext('2d').drawImage(img, 0, 0, c.width, c.height)
       URL.revokeObjectURL(img.src)
-      const dataUrl = c.toDataURL('image/jpeg', 0.85)
+      const dataUrl = c.toDataURL('image/jpeg', 0.92)
       resolve({ base64: dataUrl.split(',')[1], mime: 'image/jpeg', preview: dataUrl })
     }
     img.onerror = () => reject(new Error("Couldn't open that image. Try a screenshot or a JPG."))
@@ -20,12 +20,12 @@ export function prepareImage(file, maxSide = 1600) {
   })
 }
 
-export async function readWithAI({ text, image }) {
+export async function readWithAI({ text, image, who }) {
   const now = new Date()
   const { data, error } = await supabase.functions.invoke('smart-add', {
     body: {
       text, image: image?.base64, mime: image?.mime,
-      now: fmt(now, "EEEE d MMMM yyyy, HH:mm"),
+      now: fmt(now, "EEEE d MMMM yyyy, HH:mm"), today: fmt(now, 'yyyy-MM-dd'), who,
       tz: Intl.DateTimeFormat().resolvedOptions().timeZone || 'Europe/London'
     }
   })
